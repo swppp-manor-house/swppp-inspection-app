@@ -1,11 +1,11 @@
 """
 Google Drive Uploader for SWPPP Inspection Reports
 Uses OAuth2 token (with auto-refresh) to upload PDF reports to the user's Google Drive folder.
-Token is stored in token.json and refreshes automatically — no re-authorization needed
-as long as the refresh_token remains valid (it stays valid indefinitely unless manually revoked).
+Token is stored in token.json (or GOOGLE_TOKEN_JSON env var on Render) and refreshes automatically.
 """
 
 import json
+import os
 from pathlib import Path
 
 CONFIG_PATH = Path(__file__).parent / "config.json"
@@ -20,8 +20,29 @@ FOLDER_NAME = CONFIG["google_drive"]["folder_name"]
 SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 
 
+def _ensure_token_file():
+    """If token.json doesn't exist but GOOGLE_TOKEN_JSON env var is set, write it."""
+    if not TOKEN_FILE.exists():
+        token_json = os.environ.get("GOOGLE_TOKEN_JSON")
+        if token_json:
+            with open(TOKEN_FILE, "w") as f:
+                f.write(token_json)
+            print("Google Drive token loaded from environment variable.")
+
+
+def _ensure_credentials_file():
+    """If credentials.json doesn't exist but GOOGLE_CREDENTIALS_JSON env var is set, write it."""
+    if not CREDENTIALS_FILE.exists():
+        creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
+        if creds_json:
+            with open(CREDENTIALS_FILE, "w") as f:
+                f.write(creds_json)
+            print("Google credentials loaded from environment variable.")
+
+
 def _get_credentials():
     """Load and auto-refresh OAuth2 credentials from token.json."""
+    _ensure_token_file()
     if not TOKEN_FILE.exists():
         return None
     try:
@@ -48,13 +69,16 @@ def is_authorized():
 
 def get_auth_url():
     """Generate OAuth2 authorization URL (for re-authorization if needed)."""
+    _ensure_credentials_file()
     if not CREDENTIALS_FILE.exists():
         raise FileNotFoundError(f"credentials.json not found")
     from google_auth_oauthlib.flow import Flow
+    redirect_uri = os.environ.get("OAUTH_REDIRECT_URI",
+        "https://7861-i0wo5nb4yh6gb17w4aizq-744f7aaf.us1.manus.computer/oauth/callback")
     flow = Flow.from_client_secrets_file(
         str(CREDENTIALS_FILE),
         scopes=SCOPES,
-        redirect_uri="https://7861-i0wo5nb4yh6gb17w4aizq-744f7aaf.us1.manus.computer/oauth/callback"
+        redirect_uri=redirect_uri
     )
     auth_url, state = flow.authorization_url(
         access_type="offline",
@@ -66,11 +90,14 @@ def get_auth_url():
 
 def handle_oauth_callback(code: str):
     """Exchange auth code for token and save it."""
+    _ensure_credentials_file()
     from google_auth_oauthlib.flow import Flow
+    redirect_uri = os.environ.get("OAUTH_REDIRECT_URI",
+        "https://7861-i0wo5nb4yh6gb17w4aizq-744f7aaf.us1.manus.computer/oauth/callback")
     flow = Flow.from_client_secrets_file(
         str(CREDENTIALS_FILE),
         scopes=SCOPES,
-        redirect_uri="https://7861-i0wo5nb4yh6gb17w4aizq-744f7aaf.us1.manus.computer/oauth/callback"
+        redirect_uri=redirect_uri
     )
     flow.fetch_token(code=code)
     creds = flow.credentials

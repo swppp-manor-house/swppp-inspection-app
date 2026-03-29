@@ -4,6 +4,7 @@ Uses iCloud SMTP to send inspection reminders to lbbartee@gmail.com
 """
 
 import json
+import os
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -16,8 +17,8 @@ CONFIG_PATH = Path(__file__).parent / "config.json"
 with open(CONFIG_PATH) as f:
     CONFIG = json.load(f)
 
-ICLOUD_USER = CONFIG["email"]["icloud_user"]
-ICLOUD_PASS = CONFIG["email"]["icloud_password"]
+ICLOUD_USER = os.environ.get("ICLOUD_USER") or CONFIG["email"]["icloud_user"]
+ICLOUD_PASS = os.environ.get("ICLOUD_PASSWORD") or CONFIG["email"]["icloud_password"]
 NOTIFY_EMAIL = CONFIG["email"]["notify_email"]
 CC_EMAILS = CONFIG["email"].get("cc_emails", [])
 SMTP_HOST = "smtp.mail.me.com"

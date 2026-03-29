@@ -10,8 +10,8 @@
     "default_phase": "Erosion Control Installation"
   },
   "email": {
-    "icloud_user": "lucas.bartee@me.com",
-    "icloud_password": "vgkf-eter-itxn-xnpk",
+    "icloud_user": "ICLOUD_USER",
+    "icloud_password": "ICLOUD_PASSWORD",
     "notify_email": "lbbartee@gmail.com",
     "cc_emails": [
       "yara.llbdesign@gmail.com"

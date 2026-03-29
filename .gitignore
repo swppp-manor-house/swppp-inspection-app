@@ -7,3 +7,6 @@ reports/
 # These will be provided as environment variables on Render
 token.json
 service_account.json
+get_token_mac.py
+SERVICE_ACCOUNT_SETUP.md
+send_reminder.py

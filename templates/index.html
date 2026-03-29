@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SWPPP Inspection Report — 9561 Springs Road</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; background: #f0f2f5; color: #222; font-size: 14px; }
+    .page-header {
+      background: #1a5276; color: white; padding: 18px 24px;
+      display: flex; align-items: center; gap: 16px;
+    }
+    .page-header h1 { font-size: 20px; font-weight: bold; }
+    .page-header p { font-size: 13px; opacity: 0.85; margin-top: 2px; }
+    .container { max-width: 900px; margin: 24px auto; padding: 0 16px 60px; }
+    .card { background: white; border-radius: 8px; padding: 24px; margin-bottom: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
+    .card h2 { font-size: 15px; font-weight: bold; color: #1a5276; border-bottom: 2px solid #1a5276; padding-bottom: 8px; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .field-grid.three { grid-template-columns: 1fr 1fr 1fr; }
+    .field-group { display: flex; flex-direction: column; gap: 4px; }
+    .field-group.full { grid-column: 1 / -1; }
+    label { font-size: 12px; font-weight: bold; color: #555; text-transform: uppercase; letter-spacing: 0.4px; }
+    input[type=text], input[type=date], input[type=time], input[type=number], select, textarea {
+      border: 1px solid #ccc; border-radius: 4px; padding: 8px 10px; font-size: 14px;
+      width: 100%; background: white; color: #222;
+    }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: #1a5276; box-shadow: 0 0 0 2px rgba(26,82,118,0.15); }
+    textarea { resize: vertical; min-height: 80px; }
+    .radio-group { display: flex; gap: 16px; align-items: center; padding: 8px 0; }
+    .radio-group label { font-size: 13px; font-weight: normal; text-transform: none; letter-spacing: 0; display: flex; align-items: center; gap: 5px; cursor: pointer; }
+    .radio-group input[type=radio] { width: auto; }
+    .schedule-group { display: flex; gap: 20px; flex-wrap: wrap; padding: 8px 0; }
+    .schedule-group label { font-size: 13px; font-weight: normal; text-transform: none; letter-spacing: 0; display: flex; align-items: center; gap: 5px; cursor: pointer; }
+    .weather-checks { display: flex; gap: 12px; flex-wrap: wrap; padding: 8px 0; }
+    .weather-checks label { font-size: 13px; font-weight: normal; text-transform: none; letter-spacing: 0; display: flex; align-items: center; gap: 5px; cursor: pointer; }
+    .storm-fields { background: #fef9e7; border: 1px solid #f0c040; border-radius: 6px; padding: 14px; margin-top: 10px; }
+    .storm-fields.hidden { display: none; }
+    .checklist-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .checklist-table th { background: #1a5276; color: white; padding: 8px 10px; text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 0.4px; }
+    .checklist-table td { padding: 8px 10px; border-bottom: 1px solid #eee; vertical-align: middle; }
+    .checklist-table tr:last-child td { border-bottom: none; }
+    .checklist-table tr:hover td { background: #f8fafc; }
+    .yn-btns { display: flex; gap: 6px; }
+    .yn-btn { padding: 4px 12px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 12px; background: white; transition: all 0.15s; }
+    .yn-btn.yes.active { background: #1e8449; color: white; border-color: #1e8449; }
+    .yn-btn.no.active  { background: #c0392b; color: white; border-color: #c0392b; }
+    .yn-btn:hover { border-color: #888; }
+    input[type=hidden].yn-val { display: none; }
+    .notes-input { border: 1px solid #ddd; border-radius: 3px; padding: 4px 6px; font-size: 12px; width: 100%; }
+    .progress-bar-wrap { background: #eee; border-radius: 10px; height: 8px; margin-bottom: 6px; }
+    .progress-bar { background: #1a5276; height: 8px; border-radius: 10px; transition: width 0.3s; }
+    .progress-label { font-size: 12px; color: #666; margin-bottom: 12px; }
+    .submit-row { text-align: center; margin-top: 24px; }
+    .btn-submit {
+      background: #1a5276; color: white; border: none; padding: 14px 40px;
+      font-size: 16px; font-weight: bold; border-radius: 6px; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 10px; transition: background 0.2s;
+    }
+    .btn-submit:hover { background: #154360; }
+    .btn-submit:disabled { background: #888; cursor: not-allowed; }
+    .spinner { width: 18px; height: 18px; border: 3px solid rgba(255,255,255,0.4); border-top-color: white; border-radius: 50%; animation: spin 0.7s linear infinite; display: none; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; align-items: center; justify-content: center; }
+    .modal-overlay.show { display: flex; }
+    .modal { background: white; border-radius: 10px; padding: 32px; max-width: 480px; width: 90%; text-align: center; }
+    .modal h2 { color: #1e8449; margin-bottom: 12px; }
+    .modal p { color: #444; margin-bottom: 20px; }
+    .modal a { display: inline-block; background: #1a5276; color: white; padding: 10px 24px; border-radius: 5px; text-decoration: none; font-weight: bold; margin-right: 10px; }
+    .modal button { background: #eee; border: none; padding: 10px 24px; border-radius: 5px; cursor: pointer; font-size: 14px; }
+    @media (max-width: 600px) {
+      .field-grid, .field-grid.three { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+<div class="page-header">
+  <div>
+    <h1>SWPPP Inspection Report</h1>
+    <p>{{ config.project.location }} &nbsp;|&nbsp; Inspector: {{ config.project.inspector_name }}</p>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- General Information -->
+  <div class="card">
+    <h2>General Information</h2>
+    <div class="field-grid">
+      <div class="field-group">
+        <label>Date of Inspection</label>
+        <input type="date" id="inspection_date" value="{{ today }}" onchange="onDateChange(this.value)">
+      </div>
+      <div class="field-group">
+        <label>Inspector's Name</label>
+        <input type="text" id="inspector_name" value="{{ config.project.inspector_name }}">
+      </div>
+      <div class="field-group">
+        <label>Project Location</label>
+        <input type="text" id="project_location" value="{{ config.project.location }}">
+      </div>
+      <div class="field-group">
+        <label>Inspector Contact</label>
+        <input type="text" id="inspector_contact" value="{{ config.project.inspector_contact }}">
+      </div>
+      <div class="field-group full">
+        <label>Construction Phase</label>
+        <select id="construction_phase">
+          <option value="Site Clearing &amp; Grubbing">Site Clearing &amp; Grubbing</option>
+          <option value="Erosion Control Installation" selected>Erosion Control Installation</option>
+          <option value="Grading &amp; Earthwork">Grading &amp; Earthwork</option>
+          <option value="Utility Installation">Utility Installation</option>
+          <option value="Foundation Work">Foundation Work</option>
+          <option value="Structural Framing">Structural Framing</option>
+          <option value="Paving &amp; Hardscape">Paving &amp; Hardscape</option>
+          <option value="Landscaping &amp; Stabilization">Landscaping &amp; Stabilization</option>
+          <option value="Final Stabilization">Final Stabilization</option>
+        </select>
+      </div>
+      <div class="field-group full">
+        <label>Inspection Schedule</label>
+        <div class="schedule-group">
+          <label><input type="radio" name="inspection_schedule" value="every4" checked> Every 4 Days</label>
+          <label><input type="radio" name="inspection_schedule" value="every5"> Every 5 Days</label>
+          <label><input type="radio" name="inspection_schedule" value="monthly"> Monthly</label>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Weather Conditions -->
+  <div class="card">
+    <h2>Weather Conditions</h2>
+    <div class="field-grid">
+      <div class="field-group">
+        <label>Temperature</label>
+        <input type="text" id="temperature" value="{{ weather.temperature }}">
+      </div>
+      <div class="field-group">
+        <label>Other Weather Notes</label>
+        <input type="text" id="weather_other" placeholder="Optional notes">
+      </div>
+      <div class="field-group full">
+        <label>Weather Conditions (check all that apply)</label>
+        <div class="weather-checks">
+          <label><input type="checkbox" id="wx_Clear" {% if weather.weather_options.Clear %}checked{% endif %}> Clear</label>
+          <label><input type="checkbox" id="wx_Cloudy" {% if weather.weather_options.Cloudy %}checked{% endif %}> Cloudy</label>
+          <label><input type="checkbox" id="wx_Rain" {% if weather.weather_options.Rain %}checked{% endif %}> Rain</label>
+          <label><input type="checkbox" id="wx_Fog" {% if weather.weather_options.Fog %}checked{% endif %}> Fog</label>
+          <label><input type="checkbox" id="wx_Sleet" {% if weather.weather_options.Sleet %}checked{% endif %}> Sleet</label>
+          <label><input type="checkbox" id="wx_Snowing" {% if weather.weather_options.Snowing %}checked{% endif %}> Snowing</label>
+          <label><input type="checkbox" id="wx_High_Winds" {% if weather.weather_options['High Winds'] %}checked{% endif %}> High Winds</label>
+        </div>
+      </div>
+      <div class="field-group full">
+        <label>Storm Event Since Last Inspection?</label>
+        <div class="radio-group">
+          <label><input type="radio" name="storm_event_radio" value="yes" id="storm_yes" {% if weather.storm_event %}checked{% endif %} onchange="toggleStorm(true)"> Yes</label>
+          <label><input type="radio" name="storm_event_radio" value="no" id="storm_no" {% if not weather.storm_event %}checked{% endif %} onchange="toggleStorm(false)"> No</label>
+        </div>
+        <input type="hidden" id="storm_event" value="{{ 'true' if weather.storm_event else 'false' }}">
+      </div>
+    </div>
+    <div class="storm-fields {% if not weather.storm_event %}hidden{% endif %}" id="storm_fields">
+      <div class="field-grid three">
+        <div class="field-group">
+          <label>Storm Start Date</label>
+          <input type="text" id="storm_start_date" value="{{ weather.storm_start_date }}" placeholder="MM/DD/YYYY">
+        </div>
+        <div class="field-group">
+          <label>Storm Start Time</label>
+          <input type="text" id="storm_start_time" value="{{ weather.storm_start_time }}" placeholder="HH:MM AM/PM">
+        </div>
+        <div class="field-group">
+          <label>Duration (hrs)</label>
+          <input type="text" id="storm_duration_hrs" value="{{ weather.storm_duration_hrs }}">
+        </div>
+        <div class="field-group">
+          <label>Precipitation (inches)</label>
+          <input type="text" id="storm_precipitation_in" value="{{ weather.storm_precipitation_in }}">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Site Checklist -->
+  <div class="card">
+    <h2>Overall Site Issues Checklist</h2>
+    <div class="progress-bar-wrap"><div class="progress-bar" id="progress_bar" style="width:0%"></div></div>
+    <div class="progress-label" id="progress_label">Checklist: 0 of 16 items reviewed</div>
+    <table class="checklist-table">
+      <thead>
+        <tr>
+          <th style="width:45%">Site Activity</th>
+          <th style="width:18%">Implemented?</th>
+          <th style="width:18%">Maintenance?</th>
+          <th style="width:19%">Notes</th>
+        </tr>
+      </thead>
+      <tbody id="checklist_body"></tbody>
+    </table>
+  </div>
+
+  <!-- Comments -->
+  <div class="card">
+    <h2>Comments / Corrective Actions</h2>
+    <textarea id="comments" placeholder="Enter any comments, corrective actions required, or follow-up items..."></textarea>
+  </div>
+
+  <!-- Submit -->
+  <div class="submit-row">
+    <button class="btn-submit" id="submit_btn" onclick="submitReport()">
+      <div class="spinner" id="spinner"></div>
+      <span id="btn_text">Generate PDF Report</span>
+    </button>
+  </div>
+
+</div>
+
+<!-- Success Modal -->
+<div class="modal-overlay" id="success_modal">
+  <div class="modal">
+    <h2>&#10003; Report Generated!</h2>
+    <p id="modal_message"></p>
+    <a href="#" id="download_link" download>Download PDF</a>
+    <button onclick="closeModal()">Close</button>
+  </div>
+</div>
+
+<script>
+// ─── CHECKLIST ITEMS ─────────────────────────────────────────────────────────
+const CHECKLIST_ITEMS = [
+  { num: 1,  desc: "Is permit and SWPPP contact info posted near the entrance of the project site?", hasMaint: true },
+  { num: 2,  desc: "Is the SWPPP up to date, available on site, and properly maintained?", hasMaint: false },
+  { num: 3,  desc: "Are all inactive disturbed areas or slopes stabilized? If so, with what?", hasMaint: true },
+  { num: 4,  desc: "Natural resources (wetlands, trees, etc.) protected with perimeter controls (silt fence, etc.)?", hasMaint: true },
+  { num: 5,  desc: "Are porta-johns placed away from water sources, free of leaks and properly contained?", hasMaint: true },
+  { num: 6,  desc: "Are perimeter controls (silt fence, etc.) adequately installed? Being maintained?", hasMaint: true },
+  { num: 7,  desc: "Are discharge points and receiving waters free of any sediment deposits?", hasMaint: true },
+  { num: 8,  desc: "Are all storm drain inlets properly protected?", hasMaint: true },
+  { num: 9,  desc: "All stockpiles/construction materials located in approved areas & protected from erosion?", hasMaint: true },
+  { num: 10, desc: "Is construction entrance stopping sediment from being tracked onto paved roads?", hasMaint: true },
+  { num: 11, desc: "Is all trash being collected and being properly disposed of in dumpsters?", hasMaint: true },
+  { num: 12, desc: "Are washout facilities (paint, concrete, etc.) present, clearly marked, and maintained?", hasMaint: true },
+  { num: 13, desc: "Are vehicle and equipment fueling, cleaning, and maintenance areas free of spills, leaks, or other harmful material?", hasMaint: true },
+  { num: 14, desc: "Are potential contaminant materials stored inside or under cover?", hasMaint: true },
+  { num: 15, desc: "Are dumpsters on site being covered at the end of each day and during rain events?", hasMaint: true },
+  { num: 16, desc: "(Other)", hasMaint: true },
+];
+
+// Default values (last known state — updated when report is submitted)
+const DEFAULTS = {
+  1:  { implemented: "yes",  maintenance: "no",  notes: "" },
+  2:  { implemented: "yes",  maintenance: null,  notes: "" },
+  3:  { implemented: "no",   maintenance: "no",  notes: "" },
+  4:  { implemented: "yes",  maintenance: "no",  notes: "Silt Fence" },
+  5:  { implemented: "yes",  maintenance: "no",  notes: "" },
+  6:  { implemented: "yes",  maintenance: "no",  notes: "" },
+  7:  { implemented: "yes",  maintenance: "no",  notes: "" },
+  8:  { implemented: "yes",  maintenance: "no",  notes: "" },
+  9:  { implemented: "yes",  maintenance: "no",  notes: "" },
+  10: { implemented: "yes",  maintenance: "no",  notes: "" },
+  11: { implemented: "yes",  maintenance: "no",  notes: "" },
+  12: { implemented: "yes",  maintenance: "no",  notes: "" },
+  13: { implemented: "yes",  maintenance: "no",  notes: "" },
+  14: { implemented: "yes",  maintenance: "no",  notes: "" },
+  15: { implemented: "yes",  maintenance: "no",  notes: "" },
+  16: { implemented: null,   maintenance: null,  notes: "" },
+};
+
+// Load saved state from localStorage (persists last submitted values)
+function loadSavedState() {
+  try {
+    const saved = localStorage.getItem('swppp_last_items');
+    if (saved) return JSON.parse(saved);
+  } catch(e) {}
+  return null;
+}
+
+function saveState(items) {
+  try { localStorage.setItem('swppp_last_items', JSON.stringify(items)); } catch(e) {}
+}
+
+function savePhase(phase) {
+  try { localStorage.setItem('swppp_last_phase', phase); } catch(e) {}
+}
+
+function loadPhase() {
+  try { return localStorage.getItem('swppp_last_phase'); } catch(e) { return null; } 
+}
+
+// ─── BUILD YES/NO BUTTONS ─────────────────────────────────────────────────────
+function buildYNButtons(num, field, defaultVal) {
+  const yesActive = defaultVal === 'yes' ? 'active' : '';
+  const noActive  = defaultVal === 'no'  ? 'active' : '';
+  const hiddenVal = defaultVal || '';
+  return `
+    <div class="yn-btns">
+      <button type="button" class="yn-btn yes ${yesActive}" onclick="setYN(${num},'${field}','yes',this)">Yes</button>
+      <button type="button" class="yn-btn no ${noActive}"  onclick="setYN(${num},'${field}','no',this)">No</button>
+    </div>
+    <input type="hidden" id="${field}_${num}" class="yn-val" value="${hiddenVal}">
+  `;
+}
+
+function setYN(num, field, val, btn) {
+  const container = btn.closest('.yn-btns');
+  container.querySelectorAll('.yn-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById(`${field}_${num}`).value = val;
+  updateProgress();
+}
+
+// ─── BUILD CHECKLIST ─────────────────────────────────────────────────────────
+function buildChecklist() {
+  const savedItems = loadSavedState();
+  const tbody = document.getElementById('checklist_body');
+  tbody.innerHTML = '';
+  CHECKLIST_ITEMS.forEach(item => {
+    const def = savedItems ? (savedItems[item.num] || DEFAULTS[item.num]) : DEFAULTS[item.num];
+    const tr = document.createElement('tr');
+    const implHtml = buildYNButtons(item.num, 'impl', def.implemented);
+    const maintHtml = item.hasMaint
+      ? buildYNButtons(item.num, 'maint', def.maintenance)
+      : `<span style="color:#999;font-size:12px;">N/A</span>`;
+    tr.innerHTML = `
+      <td><strong>${item.num}.</strong> ${item.desc}</td>
+      <td>${implHtml}</td>
+      <td>${maintHtml}</td>
+      <td><input type="text" class="notes-input" id="notes_${item.num}" value="${(def.notes||'').replace(/"/g,'&quot;')}" placeholder=""></td>
+    `;
+    tbody.appendChild(tr);
+  });
+  updateProgress();
+}
+
+function updateProgress() {
+  let filled = 0;
+  CHECKLIST_ITEMS.forEach(item => {
+    const impl = document.getElementById(`impl_${item.num}`)?.value;
+    if (impl === 'yes' || impl === 'no') filled++;
+  });
+  const pct = Math.round((filled / 16) * 100);
+  document.getElementById('progress_bar').style.width = pct + '%';
+  document.getElementById('progress_label').textContent = `Checklist: ${filled} of 16 items reviewed`;
+}
+
+// ─── STORM TOGGLE ─────────────────────────────────────────────────────────────
+function toggleStorm(isYes) {
+  document.getElementById('storm_event').value = isYes ? 'true' : 'false';
+  document.getElementById('storm_fields').classList.toggle('hidden', !isYes);
+}
+
+// ─── DATE CHANGE → REFRESH WEATHER ───────────────────────────────────────────
+function onDateChange(newDate) {
+  const lastDate = '{{ last_date }}';
+  fetch(`/api/weather?date=${newDate}&last_date=${lastDate}`)
+    .then(r => r.json())
+    .then(w => {
+      document.getElementById('temperature').value = w.temperature || '';
+      ['Clear','Cloudy','Rain','Fog','Sleet','Snowing','High_Winds'].forEach(c => {
+        const key = c.replace('_', ' ');
+        const cb = document.getElementById('wx_' + c);
+        if (cb) cb.checked = !!w.weather_options[key];
+      });
+      const hasStorm = !!w.storm_event;
+      document.getElementById('storm_yes').checked = hasStorm;
+      document.getElementById('storm_no').checked  = !hasStorm;
+      document.getElementById('storm_event').value = hasStorm ? 'true' : 'false';
+      document.getElementById('storm_fields').classList.toggle('hidden', !hasStorm);
+      if (hasStorm) {
+        document.getElementById('storm_start_date').value = w.storm_start_date || '';
+        document.getElementById('storm_start_time').value = w.storm_start_time || '';
+        document.getElementById('storm_duration_hrs').value = w.storm_duration_hrs || '';
+        document.getElementById('storm_precipitation_in').value = w.storm_precipitation_in || '';
+      }
+    })
+    .catch(() => {});
+}
+
+// ─── SUBMIT ───────────────────────────────────────────────────────────────────
+function submitReport() {
+  const btn = document.getElementById('submit_btn');
+  const spinner = document.getElementById('spinner');
+  const btnText = document.getElementById('btn_text');
+  btn.disabled = true;
+  spinner.style.display = 'block';
+  btnText.textContent = 'Generating...';
+
+  // Collect inspection date
+  const inspDate = document.getElementById('inspection_date').value;
+  let inspDateDisplay = '';
+  try {
+    const [y,m,d] = inspDate.split('-');
+    inspDateDisplay = `${m}/${d}/${y}`;
+  } catch(e) { inspDateDisplay = inspDate; }
+
+  // Collect weather
+  const weatherOptions = {};
+  ['Clear','Cloudy','Rain','Fog','Sleet','Snowing'].forEach(c => {
+    weatherOptions[c] = document.getElementById('wx_' + c)?.checked || false;
+  });
+  weatherOptions['High Winds'] = document.getElementById('wx_High_Winds')?.checked || false;
+
+  // Collect site items
+  const siteItems = {};
+  CHECKLIST_ITEMS.forEach(item => {
+    siteItems[item.num] = {
+      implemented: document.getElementById(`impl_${item.num}`)?.value || '',
+      maintenance: document.getElementById(`maint_${item.num}`)?.value || '',
+      notes: document.getElementById(`notes_${item.num}`)?.value || '',
+    };
+  });
+
+  // Save state for next report
+  saveState(siteItems);
+
+  // Save construction phase
+  const phase = document.getElementById('construction_phase').value;
+  savePhase(phase);
+
+  const schedule = document.querySelector('input[name="inspection_schedule"]:checked')?.value || 'every4';
+  const stormVal = document.getElementById('storm_event').value;
+
+  const formData = {
+    project_location: document.getElementById('project_location').value,
+    inspection_date: inspDate,
+    inspection_date_display: inspDateDisplay,
+    inspector_name: document.getElementById('inspector_name').value,
+    inspector_contact: document.getElementById('inspector_contact').value,
+    construction_phase: phase,
+    inspection_schedule: schedule,
+    storm_event: stormVal === 'true',
+    storm_start_date: document.getElementById('storm_start_date').value,
+    storm_start_time: document.getElementById('storm_start_time').value,
+    storm_duration_hrs: document.getElementById('storm_duration_hrs').value,
+    storm_precipitation_in: document.getElementById('storm_precipitation_in').value,
+    weather_options: weatherOptions,
+    temperature: document.getElementById('temperature').value,
+    weather_other: document.getElementById('weather_other').value,
+    site_items: siteItems,
+    comments: document.getElementById('comments').value,
+  };
+
+  fetch('/generate_pdf', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(formData),
+  })
+    .then(r => r.json())
+    .then(data => {
+      btn.disabled = false;
+      spinner.style.display = 'none';
+      btnText.textContent = 'Generate PDF Report';
+      if (data.success) {
+        document.getElementById('download_link').href = data.download_url;
+        document.getElementById('download_link').download = data.filename;
+        document.getElementById('modal_message').textContent =
+          `"${data.filename}" has been generated and is uploading to Google Drive.`;
+        document.getElementById('success_modal').classList.add('show');
+      } else {
+        alert('Error generating report: ' + (data.error || 'Unknown error'));
+      }
+    })
+    .catch(err => {
+      btn.disabled = false;
+      spinner.style.display = 'none';
+      btnText.textContent = 'Generate PDF Report';
+      alert('Network error: ' + err.message);
+    });
+}
+
+function closeModal() {
+  document.getElementById('success_modal').classList.remove('show');
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  buildChecklist();
+
+  // Restore last used construction phase from localStorage
+  const lastPhase = loadPhase();
+  if (lastPhase) {
+    const sel = document.getElementById('construction_phase');
+    for (let i = 0; i < sel.options.length; i++) {
+      if (sel.options[i].value === lastPhase) {
+        sel.selectedIndex = i;
+        break;
+      }
+    }
+  }
+});
+</script>
+</body>
+</html>

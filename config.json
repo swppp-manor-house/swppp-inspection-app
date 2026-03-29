@@ -1,0 +1,26 @@
+{
+  "project": {
+    "location": "9561 Springs Road, Warrenton, VA 20186",
+    "county": "Fauquier County",
+    "inspector_name": "Lucas Bartee",
+    "inspector_contact": "757-816-2885",
+    "inspection_schedule": "Every 4 Days",
+    "gps_lat": 38.7,
+    "gps_lon": -77.8,
+    "default_phase": "Erosion Control Installation"
+  },
+  "email": {
+    "icloud_user": "lucas.bartee@me.com",
+    "icloud_password": "vgkf-eter-itxn-xnpk",
+    "notify_email": "lbbartee@gmail.com",
+    "cc_emails": [
+      "yara.llbdesign@gmail.com"
+    ]
+  },
+  "google_drive": {
+    "folder_name": "Manor House SWPPP Inspection Reports",
+    "credentials_file": "credentials.json",
+    "token_file": "token.json",
+    "folder_id": "1pu9pVgsSA159NHxkMyAlpZAxfDmIPuD2"
+  }
+}

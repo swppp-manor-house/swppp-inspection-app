@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+*.pyo
+reports/
+*.log
+.env
+# These will be provided as environment variables on Render
+token.json
+service_account.json

@@ -137,6 +137,16 @@ def generate_swppp_pdf(form_data: dict, output_path: str):
         </tr>"""
 
     # ── Full HTML document ─────────────────────────────────────────────────────
+    # Use bundled font if available, fall back to system font
+    _bundled_font = os.path.join(_SCRIPT_DIR, 'fonts', 'NotoSans-Regular.ttf')
+    _system_font = '/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf'
+    if os.path.exists(_bundled_font):
+        font_path = _bundled_font
+    elif os.path.exists(_system_font):
+        font_path = _system_font
+    else:
+        font_path = ''
+
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -148,7 +158,7 @@ def generate_swppp_pdf(form_data: dict, output_path: str):
   }}
   @font-face {{
     font-family: 'NotoSans';
-    src: url('/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf');
+    src: url('{font_path}');
   }}
   * {{ box-sizing: border-box; }}
   body {{

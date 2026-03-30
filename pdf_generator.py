@@ -1,42 +1,46 @@
 """
 PDF Generator for SWPPP Inspection Report
-Uses WeasyPrint (HTML-to-PDF) with CSS-based checkboxes for reliable rendering.
+Uses ReportLab (pure Python) — works on any Python version, no fonttools dependency.
 """
 
-import base64
 import os
-from weasyprint import HTML
 from datetime import datetime
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.units import inch
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+    HRFlowable, PageBreak, Image
+)
+from reportlab.platypus.flowables import Flowable
 
-# ── Load signature image as base64 for PDF embedding ──────────────────────────
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _SIG_PATH = os.path.join(_SCRIPT_DIR, 'static', 'signature.png')
-try:
-    with open(_SIG_PATH, 'rb') as _f:
-        _SIG_B64 = base64.b64encode(_f.read()).decode()
-    SIGNATURE_IMG = f'data:image/png;base64,{_SIG_B64}'
-except FileNotFoundError:
-    SIGNATURE_IMG = ''
 
 
-def _box(checked: bool) -> str:
-    """Return an HTML span for a filled (black) or empty checkbox square."""
-    cls = 'cb-checked' if checked else 'cb-unchecked'
-    return f'<span class="{cls}"></span>'
+class CheckBox(Flowable):
+    """A small filled or empty checkbox square."""
+    def __init__(self, checked=False, size=8):
+        super().__init__()
+        self.checked = checked
+        self.size = size
+        self.width = size
+        self.height = size
+
+    def draw(self):
+        self.canv.setLineWidth(1)
+        self.canv.rect(0, 0, self.size, self.size, stroke=1, fill=1 if self.checked else 0)
 
 
-def cb(value: bool, label: str) -> str:
-    """Return a single checkbox + label."""
-    return f'{_box(value)} {label}'
-
-
-def cb_yes_no(value: str) -> str:
-    """Return Yes/No checkbox pair HTML."""
-    return f'{_box(value == "yes")} Yes &nbsp;&nbsp; {_box(value == "no")} No'
+def _cb_text(checked: bool) -> str:
+    """Return unicode checkbox character for use in Paragraphs."""
+    return '&#9632;' if checked else '&#9633;'
 
 
 def generate_swppp_pdf(form_data: dict, output_path: str):
-    """Generate the SWPPP inspection report PDF from form data."""
+    """Generate the SWPPP inspection report PDF from form data using ReportLab."""
 
     # ── Extract form data ──────────────────────────────────────────────────────
     project_location   = form_data.get("project_location", "")
@@ -61,40 +65,223 @@ def generate_swppp_pdf(form_data: dict, output_path: str):
 
     generated_at = datetime.now().strftime("%B %d, %Y at %I:%M %p")
 
-    # ── Inspection schedule checkboxes ─────────────────────────────────────────
-    sched_4       = _box(schedule == "every4")
-    sched_5       = _box(schedule == "every5")
-    sched_monthly = _box(schedule == "monthly")
+    # ── Styles ─────────────────────────────────────────────────────────────────
+    styles = getSampleStyleSheet()
+    normal = ParagraphStyle('normal', fontSize=9.5, leading=13, fontName='Helvetica')
+    bold   = ParagraphStyle('bold',   fontSize=9.5, leading=13, fontName='Helvetica-Bold')
+    small  = ParagraphStyle('small',  fontSize=8,   leading=11, fontName='Helvetica')
+    italic = ParagraphStyle('italic', fontSize=9,   leading=12, fontName='Helvetica-Oblique')
+    title1 = ParagraphStyle('title1', fontSize=14,  leading=18, fontName='Helvetica-Bold', alignment=TA_CENTER)
+    title2 = ParagraphStyle('title2', fontSize=13,  leading=17, fontName='Helvetica-Bold', alignment=TA_CENTER)
+    section_hdr = ParagraphStyle('section_hdr', fontSize=11, leading=14, fontName='Helvetica-Bold')
+    cert_text = ParagraphStyle('cert_text', fontSize=9, leading=13, fontName='Helvetica-Oblique',
+                               alignment=TA_JUSTIFY, leftIndent=8, rightIndent=8)
+    footer_style = ParagraphStyle('footer', fontSize=7.5, leading=10, fontName='Helvetica-Oblique',
+                                  alignment=TA_CENTER, textColor=colors.grey)
 
-    # ── Storm event checkboxes ─────────────────────────────────────────────────
-    storm_yes_sym = _box(bool(storm_event))
-    storm_no_sym  = _box(not bool(storm_event))
+    def field_row(label, value, label_width=None):
+        """Return a Table row with label and underlined value."""
+        lw = label_width or 2.2*inch
+        vw = 6.3*inch - lw
+        label_p = Paragraph(f'<b>{label}</b>', normal)
+        value_p = Paragraph(value or '', normal)
+        t = Table([[label_p, value_p]], colWidths=[lw, vw])
+        t.setStyle(TableStyle([
+            ('VALIGN', (0,0), (-1,-1), 'BOTTOM'),
+            ('LINEBELOW', (1,0), (1,0), 0.5, colors.black),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 2),
+            ('TOPPADDING', (0,0), (-1,-1), 2),
+        ]))
+        return t
 
-    # Storm detail always shown; blank when no storm
-    storm_detail_html = f"""
-        <div class="storm-detail">
-          <p class="if-yes">If yes, provide:</p>
-          <table class="storm-table">
-            <tr>
-              <td class="label"><b>Storm Start Date &amp; Time:</b></td>
-              <td class="value underline">{storm_start_date} {storm_start_time}</td>
-              <td class="label"><b>Storm Duration (hrs):</b></td>
-              <td class="value underline">{storm_duration}</td>
-            </tr>
-            <tr>
-              <td class="label"><b>Approximate Amount of Precipitation (in):</b></td>
-              <td class="value underline">{storm_precip}</td>
-              <td></td><td></td>
-            </tr>
-          </table>
-        </div>
-        """
+    def cb_yn(value):
+        """Return checked/unchecked Yes No string."""
+        yes = _cb_text(value == 'yes')
+        no  = _cb_text(value == 'no')
+        return f'{yes} Yes &nbsp;&nbsp; {no} No'
 
-    # ── Weather checkboxes ─────────────────────────────────────────────────────
     def wc(key):
-        return _box(bool(weather_opts.get(key, False)))
+        return _cb_text(bool(weather_opts.get(key, False)))
 
-    # ── Overall Site Issues table rows ─────────────────────────────────────────
+    # ── Build document ─────────────────────────────────────────────────────────
+    doc = SimpleDocTemplate(
+        output_path,
+        pagesize=letter,
+        leftMargin=0.65*inch, rightMargin=0.65*inch,
+        topMargin=0.55*inch,  bottomMargin=0.55*inch,
+    )
+
+    story = []
+    W = 6.3*inch  # usable width
+
+    # ── PAGE 1 ─────────────────────────────────────────────────────────────────
+    story.append(Paragraph('SWPPP Inspection Report', title1))
+    story.append(HRFlowable(width=W, thickness=2, color=colors.black, spaceAfter=6))
+
+    story.append(Paragraph('General Information', section_hdr))
+    story.append(Spacer(1, 4))
+
+    story.append(field_row('Project Location:', project_location))
+    story.append(Spacer(1, 3))
+    story.append(field_row('Date of Inspection:', inspection_date, 1.6*inch))
+    story.append(Spacer(1, 3))
+    story.append(field_row("Inspector's Name:", inspector_name, 1.5*inch))
+    story.append(Spacer(1, 3))
+    story.append(field_row("Inspector's Contact Information:", inspector_contact, 2.4*inch))
+    story.append(Spacer(1, 3))
+    story.append(field_row('Describe current phase of construction:', construction_phase, 2.9*inch))
+    story.append(Spacer(1, 4))
+
+    # Inspection schedule
+    s4  = _cb_text(schedule == 'every4')
+    s5  = _cb_text(schedule == 'every5')
+    smo = _cb_text(schedule == 'monthly')
+    story.append(Paragraph('<b>Inspection Schedule:</b>', normal))
+    story.append(Spacer(1, 3))
+    sched_data = [[
+        Paragraph(f'{s4} Every 4 days', normal),
+        Paragraph(f'{s5} Every 5 days &amp; 24 hours after rain event', normal),
+        Paragraph(f'{smo} Monthly (w/ county inspector approval)', normal),
+    ]]
+    sched_t = Table(sched_data, colWidths=[1.6*inch, 2.8*inch, 1.9*inch])
+    sched_t.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING', (0,0), (-1,-1), 1),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 1),
+    ]))
+    story.append(sched_t)
+    story.append(HRFlowable(width=W, thickness=0.5, color=colors.grey, spaceBefore=6, spaceAfter=6))
+
+    # ── Weather section ────────────────────────────────────────────────────────
+    story.append(Paragraph('Weather Information', section_hdr))
+    story.append(Spacer(1, 4))
+
+    storm_yes = _cb_text(bool(storm_event))
+    storm_no  = _cb_text(not bool(storm_event))
+    story.append(Paragraph(
+        f'<b>Has there been a storm event since the last inspection?</b> &nbsp; {storm_yes} Yes &nbsp;&nbsp; {storm_no} No',
+        normal))
+    story.append(Spacer(1, 4))
+
+    if storm_event:
+        storm_data = [
+            [Paragraph('<b>Storm Start Date &amp; Time:</b>', normal),
+             Paragraph(f'{storm_start_date} {storm_start_time}', normal),
+             Paragraph('<b>Storm Duration (hrs):</b>', normal),
+             Paragraph(storm_duration or '', normal)],
+            [Paragraph('<b>Approximate Amount of Precipitation (in):</b>', normal),
+             Paragraph(storm_precip or '', normal), '', ''],
+        ]
+        storm_t = Table(storm_data, colWidths=[2.1*inch, 1.3*inch, 1.6*inch, 1.3*inch])
+        storm_t.setStyle(TableStyle([
+            ('VALIGN', (0,0), (-1,-1), 'BOTTOM'),
+            ('LINEBELOW', (1,0), (1,0), 0.5, colors.black),
+            ('LINEBELOW', (3,0), (3,0), 0.5, colors.black),
+            ('LINEBELOW', (1,1), (1,1), 0.5, colors.black),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 2),
+            ('TOPPADDING', (0,0), (-1,-1), 2),
+        ]))
+        story.append(storm_t)
+        story.append(Spacer(1, 4))
+
+    weather_keys = ['Clear', 'Cloudy', 'Rain', 'Fog', 'Sleet', 'Snowing', 'High Winds']
+    weather_cells = [Paragraph('<b>Weather at time of inspection:</b>', normal)]
+    for wk in weather_keys:
+        weather_cells.append(Paragraph(f'{wc(wk)} {wk}', normal))
+    weather_cells.append(Paragraph(f'<b>Temp:</b> {temperature}', normal))
+
+    col_widths = [1.9*inch] + [0.7*inch]*7 + [0.7*inch]
+    weather_t = Table([weather_cells], colWidths=col_widths)
+    weather_t.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING', (0,0), (-1,-1), 1),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 1),
+    ]))
+    story.append(weather_t)
+
+    if weather_other:
+        story.append(Spacer(1, 3))
+        story.append(Paragraph(f'<b>Other:</b> {weather_other}', normal))
+
+    story.append(HRFlowable(width=W, thickness=0.5, color=colors.grey, spaceBefore=6, spaceAfter=6))
+
+    # ── Certification box ──────────────────────────────────────────────────────
+    cert_inner = Paragraph(
+        '&#8220;I certify under penalty of law that this document and all attachments were prepared under my '
+        'direction or supervision in accordance with a system designed to assure that qualified personnel '
+        'properly gathered and evaluated the information submitted. Based on my inquiry of the person or '
+        'persons who manage the system, or those persons directly responsible for gathering the information, '
+        'the information submitted is, to the best of my knowledge and belief, true, accurate, and complete. '
+        'I am aware that there are significant penalties for submitting false information, including the '
+        'possibility of fine and imprisonment for knowing violations.&#8221;',
+        cert_text)
+
+    cert_header = Paragraph('<b><i>Certification Statement</i></b>', 
+                            ParagraphStyle('ch', fontSize=11, leading=14, fontName='Helvetica-BoldOblique',
+                                           alignment=TA_CENTER))
+    cert_t = Table(
+        [[cert_header], [cert_inner]],
+        colWidths=[W]
+    )
+    cert_t.setStyle(TableStyle([
+        ('BOX', (0,0), (-1,-1), 2, colors.black),
+        ('BACKGROUND', (0,0), (0,0), colors.lightgrey),
+        ('LINEBELOW', (0,0), (0,0), 2, colors.black),
+        ('TOPPADDING', (0,0), (0,0), 5),
+        ('BOTTOMPADDING', (0,0), (0,0), 5),
+        ('TOPPADDING', (0,1), (0,1), 8),
+        ('BOTTOMPADDING', (0,1), (0,1), 10),
+    ]))
+    story.append(cert_t)
+    story.append(Spacer(1, 10))
+
+    # ── Signature row ──────────────────────────────────────────────────────────
+    sig_col1 = []
+    if os.path.exists(_SIG_PATH):
+        try:
+            sig_img = Image(_SIG_PATH, width=1.8*inch, height=0.55*inch)
+            sig_col1.append(sig_img)
+        except Exception:
+            sig_col1.append(Spacer(1, 0.55*inch))
+    else:
+        sig_col1.append(Spacer(1, 0.55*inch))
+
+    sig_data = [[
+        sig_col1[0],
+        Paragraph(f'<b>{inspector_name}</b>', normal),
+        Paragraph(f'<b>{inspection_date}</b>', normal),
+    ]]
+    sig_t = Table(sig_data, colWidths=[2.4*inch, 2.4*inch, 1.5*inch])
+    sig_t.setStyle(TableStyle([
+        ('VALIGN', (0,0), (-1,-1), 'BOTTOM'),
+        ('LINEBELOW', (0,0), (0,0), 0.5, colors.black),
+        ('LINEBELOW', (1,0), (1,0), 0.5, colors.black),
+        ('LINEBELOW', (2,0), (2,0), 0.5, colors.black),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 2),
+        ('TOPPADDING', (0,0), (-1,-1), 2),
+    ]))
+    story.append(sig_t)
+
+    sig_labels = Table([[
+        Paragraph('<i>Signature of Inspector</i>', small),
+        Paragraph('<i>Printed Name and Title</i>', small),
+        Paragraph('<i>Date</i>', small),
+    ]], colWidths=[2.4*inch, 2.4*inch, 1.5*inch])
+    sig_labels.setStyle(TableStyle([
+        ('TOPPADDING', (0,0), (-1,-1), 2),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 0),
+    ]))
+    story.append(sig_labels)
+
+    # ── PAGE 2 ─────────────────────────────────────────────────────────────────
+    story.append(PageBreak())
+    story.append(Paragraph('Overall Site Issues', title2))
+    story.append(HRFlowable(width=W, thickness=2, color=colors.black, spaceAfter=4))
+    story.append(Paragraph(
+        'Below are some general site issues that should be assessed during inspections.',
+        ParagraphStyle('note', fontSize=8.5, leading=11, fontName='Helvetica')))
+    story.append(Spacer(1, 6))
+
     site_items_def = [
         (1,  "Is permit and SWPPP contact info posted near the entrance of the project site?", True),
         (2,  "Is the SWPPP up to date, available on site, and properly maintained?", False),
@@ -104,7 +291,7 @@ def generate_swppp_pdf(form_data: dict, output_path: str):
         (6,  "Are perimeter controls (silt fence, etc.) adequately installed? Being maintained?", True),
         (7,  "Are discharge points and receiving waters free of any sediment deposits?", True),
         (8,  "Are all storm drain inlets properly protected?", True),
-        (9,  "All stockpiles/construction materials located in approved areas &amp; protected from erosion?", True),
+        (9,  "All stockpiles/construction materials located in approved areas & protected from erosion?", True),
         (10, "Is construction entrance stopping sediment from being tracked onto paved roads?", True),
         (11, "Is all trash being collected and being properly disposed of in dumpsters?", True),
         (12, "Are washout facilities (paint, concrete, etc.) present, clearly marked, and maintained?", True),
@@ -114,421 +301,82 @@ def generate_swppp_pdf(form_data: dict, output_path: str):
         (16, "(Other)", True),
     ]
 
-    rows_html = ""
+    item_style = ParagraphStyle('item', fontSize=8.5, leading=11, fontName='Helvetica')
+    yn_style   = ParagraphStyle('yn',   fontSize=8.5, leading=11, fontName='Helvetica', alignment=TA_CENTER)
+    na_style   = ParagraphStyle('na',   fontSize=8.5, leading=11, fontName='Helvetica', alignment=TA_CENTER,
+                                textColor=colors.grey)
+
+    # Header row
+    header_style = ParagraphStyle('hdr', fontSize=8.5, leading=11, fontName='Helvetica-Bold', alignment=TA_CENTER)
+    table_data = [[
+        Paragraph('Site Activity', ParagraphStyle('hdr_l', fontSize=8.5, leading=11, fontName='Helvetica-Bold')),
+        Paragraph('Implemented?', header_style),
+        Paragraph('Maintenance?', header_style),
+        Paragraph('Notes', header_style),
+    ]]
+
     for i, (num, desc, has_maint) in enumerate(site_items_def):
         item = site_items_data.get(str(num), {})
-        impl  = item.get("implemented", "")
-        maint = item.get("maintenance", "")
-        notes = item.get("notes", "")
-        row_class = "row-alt" if i % 2 == 1 else ""
+        impl  = item.get('implemented', '')
+        maint = item.get('maintenance', '')
+        notes = item.get('notes', '')
 
-        impl_html = cb_yes_no(impl)
-        if has_maint:
-            maint_html = cb_yes_no(maint)
-        else:
-            maint_html = "<span style='color:#999'>N/A</span>"
+        impl_p  = Paragraph(cb_yn(impl), yn_style)
+        maint_p = Paragraph(cb_yn(maint), yn_style) if has_maint else Paragraph('N/A', na_style)
+        notes_p = Paragraph(notes or '', ParagraphStyle('notes', fontSize=8, leading=10, fontName='Helvetica'))
 
-        rows_html += f"""
-        <tr class="{row_class}">
-          <td class="activity"><b>{num}.</b> {desc}</td>
-          <td class="yn-cell">{impl_html}</td>
-          <td class="yn-cell">{maint_html}</td>
-          <td class="notes-cell">{notes}</td>
-        </tr>"""
+        table_data.append([
+            Paragraph(f'<b>{num}.</b> {desc}', item_style),
+            impl_p,
+            maint_p,
+            notes_p,
+        ])
 
-    # ── Full HTML document ─────────────────────────────────────────────────────
-    # Use bundled font if available, fall back to system font
-    _bundled_font = os.path.join(_SCRIPT_DIR, 'fonts', 'NotoSans-Regular.ttf')
-    _system_font = '/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf'
-    if os.path.exists(_bundled_font):
-        font_path = _bundled_font
-    elif os.path.exists(_system_font):
-        font_path = _system_font
-    else:
-        font_path = ''
+    col_widths_checklist = [3.1*inch, 1.0*inch, 1.0*inch, 1.2*inch]
+    checklist_t = Table(table_data, colWidths=col_widths_checklist, repeatRows=1)
 
-    html = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<style>
-  @page {{
-    size: letter;
-    margin: 0.55in 0.65in 0.55in 0.65in;
-  }}
-  @font-face {{
-    font-family: 'NotoSans';
-    src: url('{font_path}');
-  }}
-  * {{ box-sizing: border-box; }}
-  body {{
-    font-family: 'NotoSans', Arial, Helvetica, sans-serif;
-    font-size: 9.5pt;
-    color: #000;
-    line-height: 1.3;
-  }}
+    ts = TableStyle([
+        # Header
+        ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
+        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0,0), (-1,0), 8.5),
+        # All cells
+        ('BOX', (0,0), (-1,-1), 0.5, colors.black),
+        ('INNERGRID', (0,0), (-1,-1), 0.5, colors.black),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING', (0,0), (-1,-1), 3),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 3),
+        ('LEFTPADDING', (0,0), (-1,-1), 4),
+        ('RIGHTPADDING', (0,0), (-1,-1), 4),
+    ])
+    # Alternating row colors
+    for i in range(1, len(table_data)):
+        if i % 2 == 0:
+            ts.add('BACKGROUND', (0,i), (-1,i), colors.Color(0.97, 0.97, 0.97))
 
-  /* ── Checkbox styles ── */
-  .cb-checked {{
-    display: inline-block;
-    width: 10px;
-    height: 10px;
-    border: 1.5px solid #000;
-    background: #000;
-    vertical-align: middle;
-    margin-right: 2px;
-  }}
-  .cb-unchecked {{
-    display: inline-block;
-    width: 10px;
-    height: 10px;
-    border: 1.5px solid #000;
-    background: white;
-    vertical-align: middle;
-    margin-right: 2px;
-  }}
+    checklist_t.setStyle(ts)
+    story.append(checklist_t)
 
-  /* ── Title ── */
-  h1.report-title {{
-    text-align: center;
-    font-size: 14pt;
-    font-weight: bold;
-    margin: 0 0 4px 0;
-    padding: 0;
-  }}
-  hr.thick {{ border: none; border-top: 2px solid #000; margin: 4px 0 8px 0; }}
-  hr.thin  {{ border: none; border-top: 1px solid #888; margin: 6px 0 6px 0; }}
+    story.append(Spacer(1, 10))
+    story.append(Paragraph('<b>Comments:</b>', normal))
+    story.append(Spacer(1, 3))
 
-  /* ── Section headers ── */
-  h2.section {{
-    font-size: 11pt;
-    font-weight: bold;
-    margin: 8px 0 4px 0;
-  }}
+    # Comments box
+    comments_t = Table(
+        [[Paragraph(comments or '', ParagraphStyle('comments', fontSize=9, leading=12, fontName='Helvetica'))]],
+        colWidths=[W], rowHeights=[max(60, 12 * (comments.count('\n') + 1) + 20) if comments else 60]
+    )
+    comments_t.setStyle(TableStyle([
+        ('BOX', (0,0), (-1,-1), 0.5, colors.black),
+        ('TOPPADDING', (0,0), (-1,-1), 5),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+        ('LEFTPADDING', (0,0), (-1,-1), 5),
+        ('RIGHTPADDING', (0,0), (-1,-1), 5),
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+    ]))
+    story.append(comments_t)
 
-  /* ── Field rows ── */
-  .field-row {{
-    display: flex;
-    align-items: flex-end;
-    margin-bottom: 4px;
-    gap: 6px;
-  }}
-  .field-label {{
-    font-weight: bold;
-    white-space: nowrap;
-    flex-shrink: 0;
-  }}
-  .field-value {{
-    border-bottom: 1px solid #000;
-    flex: 1;
-    min-width: 60px;
-    padding-bottom: 1px;
-  }}
-  .field-row-2col {{
-    display: flex;
-    gap: 16px;
-    margin-bottom: 4px;
-  }}
-  .field-row-2col .col {{
-    display: flex;
-    align-items: flex-end;
-    gap: 6px;
-    flex: 1;
-  }}
+    story.append(Spacer(1, 8))
+    story.append(Paragraph(f'Report generated: {generated_at}', footer_style))
 
-  /* ── Schedule row ── */
-  .sched-row {{
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    margin-bottom: 4px;
-  }}
-  .sched-option {{
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    white-space: nowrap;
-  }}
-
-  /* ── Storm detail table ── */
-  .storm-detail {{ margin: 4px 0; }}
-  .if-yes {{ font-style: italic; font-size: 8.5pt; margin: 2px 0; }}
-  table.storm-table {{
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 9pt;
-  }}
-  table.storm-table td {{ padding: 2px 4px; vertical-align: bottom; }}
-  table.storm-table td.label {{ font-weight: bold; white-space: nowrap; width: 30%; }}
-  table.storm-table td.value {{ border-bottom: 1px solid #000; width: 20%; }}
-
-  /* ── Weather row ── */
-  .weather-row {{
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin: 4px 0;
-    flex-wrap: wrap;
-  }}
-  .weather-option {{
-    display: flex;
-    align-items: center;
-    gap: 3px;
-    white-space: nowrap;
-  }}
-
-  /* ── Certification box ── */
-  .cert-box {{
-    border: 2px solid #000;
-    margin: 8px 0 10px 0;
-  }}
-  .cert-header {{
-    background: #d3d3d3;
-    text-align: center;
-    font-size: 11pt;
-    padding: 5px 8px;
-    border-bottom: 2px solid #000;
-  }}
-  .cert-text {{
-    font-style: italic;
-    font-size: 9pt;
-    text-align: justify;
-    margin: 8px 12px 10px 12px;
-    line-height: 1.5;
-  }}
-
-  /* ── Signature section ── */
-  .sig-table {{
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 20px;
-  }}
-  .sig-table td {{
-    padding: 0;
-    vertical-align: bottom;
-  }}
-  .sig-td-left  {{ width: 38%; padding-right: 16px; }}
-  .sig-td-mid   {{ width: 40%; padding-right: 16px; }}
-  .sig-td-right {{ width: 22%; }}
-  .sig-img {{
-    max-height: 55px;
-    max-width: 180px;
-    object-fit: contain;
-    display: block;
-    margin-bottom: 0;
-  }}
-  .sig-line-full {{
-    border-bottom: 1px solid #000;
-    height: 1px;
-    width: 100%;
-    display: block;
-  }}
-  .sig-label-text {{
-    font-size: 8pt;
-    font-style: italic;
-    margin-top: 3px;
-    display: block;
-  }}
-  .sig-filled {{
-    font-size: 9pt;
-    font-weight: bold;
-    margin-top: 2px;
-    display: block;
-  }}
-
-  /* ── Page 2 ── */
-  .page-break {{ page-break-before: always; }}
-  h1.page2-title {{
-    text-align: center;
-    font-size: 13pt;
-    font-weight: bold;
-    margin: 0 0 4px 0;
-  }}
-
-  /* ── Checklist table ── */
-  table.checklist {{
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 8.5pt;
-    margin-top: 6px;
-  }}
-  table.checklist th {{
-    background: #d3d3d3;
-    font-weight: bold;
-    border: 1px solid #000;
-    padding: 4px 5px;
-    text-align: center;
-    font-size: 8.5pt;
-  }}
-  table.checklist th.activity-h {{ text-align: left; }}
-  table.checklist td {{
-    border: 1px solid #000;
-    padding: 4px 5px;
-    vertical-align: middle;
-  }}
-  table.checklist td.activity {{ font-size: 8.5pt; }}
-  table.checklist td.yn-cell {{
-    text-align: center;
-    white-space: nowrap;
-    width: 13%;
-  }}
-  table.checklist td.notes-cell {{ width: 18%; font-size: 8pt; }}
-  tr.row-alt td {{ background: #f8f8f8; }}
-
-  /* ── Comments ── */
-  .comments-box {{
-    border: 1px solid #000;
-    min-height: 60px;
-    padding: 5px;
-    margin-top: 4px;
-    font-size: 9pt;
-  }}
-  .footer {{
-    text-align: center;
-    font-size: 7.5pt;
-    color: #666;
-    font-style: italic;
-    margin-top: 10px;
-  }}
-</style>
-</head>
-<body>
-
-<!-- ═══════════════════ PAGE 1 ═══════════════════ -->
-<h1 class="report-title">SWPPP Inspection Report</h1>
-<hr class="thick">
-
-<!-- General Information -->
-<h2 class="section">General Information</h2>
-
-<div class="field-row">
-  <span class="field-label">Project Location:</span>
-  <span class="field-value">{project_location}</span>
-</div>
-
-<div class="field-row">
-  <span class="field-label">Date of Inspection:</span>
-  <span class="field-value">{inspection_date}</span>
-</div>
-
-<div class="field-row">
-  <span class="field-label">Inspector's Name:</span>
-  <span class="field-value">{inspector_name}</span>
-</div>
-
-<div class="field-row">
-  <span class="field-label">Inspector's Contact Information:</span>
-  <span class="field-value">{inspector_contact}</span>
-</div>
-
-<div class="field-row">
-  <span class="field-label">Describe current phase of construction:</span>
-  <span class="field-value">{construction_phase}</span>
-</div>
-
-<div style="margin-bottom:4px;">
-  <span class="field-label">Inspection Schedule:</span><br>
-  <div class="sched-row" style="margin-top:3px;">
-    <span class="sched-option">{sched_4} Every 4 days</span>
-    <span class="sched-option">{sched_5} Every 5 days &amp; 24 hours after rain event</span>
-    <span class="sched-option">{sched_monthly} Monthly<br><span style="font-size:8pt;padding-left:14px;">(w/ county inspector approval)</span></span>
-  </div>
-</div>
-
-<hr class="thin">
-
-<!-- Weather Information -->
-<h2 class="section">Weather Information</h2>
-
-<div class="field-row" style="gap:16px;">
-  <span class="field-label">Has there been a storm event since the last inspection?</span>
-  <span style="margin-left:8px; display:flex; align-items:center; gap:6px;">
-    {storm_yes_sym} Yes &nbsp;&nbsp; {storm_no_sym} No
-  </span>
-</div>
-
-{storm_detail_html}
-
-<div class="weather-row">
-  <span class="field-label">Weather at time of this inspection?</span>
-  <span class="weather-option">{wc('Clear')} Clear</span>
-  <span class="weather-option">{wc('Cloudy')} Cloudy</span>
-  <span class="weather-option">{wc('Rain')} Rain</span>
-  <span class="weather-option">{wc('Fog')} Fog</span>
-  <span class="weather-option">{wc('Sleet')} Sleet</span>
-  <span class="weather-option">{wc('Snowing')} Snowing</span>
-  <span class="weather-option">{wc('High Winds')} High Winds</span>
-  <span style="margin-left:8px;"><b>Temperature:</b> {temperature}</span>
-</div>
-{'<div style="font-size:9pt;margin-top:2px;"><b>Other:</b> ' + weather_other + '</div>' if weather_other else ''}
-
-<hr class="thin">
-
-<!-- Certification Statement -->
-<div class="cert-box">
-  <div class="cert-header"><em><strong>Certification Statement</strong></em></div>
-  <p class="cert-text">
-    &#8220;I certify under penalty of law that this document and all attachments were prepared under my
-    direction or supervision in accordance with a system designed to assure that qualified personnel
-    properly gathered and evaluated the information submitted. Based on my inquiry of the person or
-    persons who manage the system, or those persons directly responsible for gathering the information,
-    the information submitted is, to the best of my knowledge and belief, true, accurate, and complete.
-    I am aware that there are significant penalties for submitting false information, including the
-    possibility of fine and imprisonment for knowing violations.&#8221;
-  </p>
-</div>
-
-<!-- Signature row: Left=Signature, Center=Printed Name & Title, Right=Date -->
-<table class="sig-table">
-  <tr>
-    <td class="sig-td-left">
-      {'<img src="' + SIGNATURE_IMG + '" class="sig-img" alt="Signature">' if SIGNATURE_IMG else '<div style="height:55px;"></div>'}
-      <span class="sig-line-full"></span>
-      <span class="sig-label-text"><em>Signature of Inspector</em></span>
-    </td>
-    <td class="sig-td-mid">
-      <span class="sig-filled">{inspector_name}</span>
-      <span class="sig-line-full"></span>
-      <span class="sig-label-text"><em>Printed Name and Title</em></span>
-    </td>
-    <td class="sig-td-right">
-      <span class="sig-filled">{inspection_date}</span>
-      <span class="sig-line-full"></span>
-      <span class="sig-label-text"><em>Date</em></span>
-    </td>
-  </tr>
-</table>
-
-
-<!-- ═══════════════════ PAGE 2 ═══════════════════ -->
-<div class="page-break"></div>
-
-<h1 class="page2-title">Overall Site Issues</h1>
-<hr class="thick">
-<p style="font-size:8.5pt;margin:4px 0 6px 0;">Below are some general site issues that should be assessed during inspections.</p>
-
-<table class="checklist">
-  <thead>
-    <tr>
-      <th class="activity-h">Site Activity</th>
-      <th>Implemented?</th>
-      <th>Maintenance?</th>
-      <th>Notes</th>
-    </tr>
-  </thead>
-  <tbody>
-    {rows_html}
-  </tbody>
-</table>
-
-<div style="margin-top:10px;">
-  <b>Comments:</b>
-  <div class="comments-box">{comments}</div>
-</div>
-
-<div class="footer">Report generated: {generated_at}</div>
-
-</body>
-</html>"""
-
-    HTML(string=html).write_pdf(output_path)
+    doc.build(story)

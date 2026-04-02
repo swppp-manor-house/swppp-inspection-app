@@ -21,13 +21,15 @@ SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 
 
 def _ensure_token_file():
-    """If token.json doesn't exist but GOOGLE_TOKEN_JSON env var is set, write it."""
-    if not TOKEN_FILE.exists():
-        token_json = os.environ.get("GOOGLE_TOKEN_JSON")
-        if token_json:
-            with open(TOKEN_FILE, "w") as f:
-                f.write(token_json)
-            print("Google Drive token loaded from environment variable.")
+    """Load token from GOOGLE_TOKEN_JSON env var if present (Render), otherwise use local file."""
+    token_json = os.environ.get("GOOGLE_TOKEN_JSON")
+    if token_json:
+        # Always use env var on Render to get latest refreshed token
+        with open(TOKEN_FILE, "w") as f:
+            f.write(token_json)
+        print("Google Drive token loaded from environment variable.")
+    elif not TOKEN_FILE.exists():
+        print("No token.json found and GOOGLE_TOKEN_JSON env var not set.")
 
 
 def _ensure_credentials_file():

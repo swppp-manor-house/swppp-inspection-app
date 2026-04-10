@@ -1,7 +1,8 @@
 """
 Google Drive Uploader for SWPPP Inspection Reports
-Uses OAuth2 token (with auto-refresh) to upload PDF reports to the user's Google Drive folder.
-Token is stored in token.json (or GOOGLE_TOKEN_JSON env var on Render) and refreshes automatically.
+Uses OAuth2 with automatic token refresh. The refresh_token never expires,
+so as long as the app refreshes the access token before it expires (every hour),
+Drive uploads work indefinitely without manual re-authorization.
 """
 
 import json
@@ -12,100 +13,114 @@ CONFIG_PATH = Path(__file__).parent / "config.json"
 with open(CONFIG_PATH) as f:
     CONFIG = json.load(f)
 
-CREDENTIALS_FILE = Path(__file__).parent / "credentials.json"
 TOKEN_FILE = Path(__file__).parent / "token.json"
 FOLDER_ID = CONFIG["google_drive"].get("folder_id", "1pu9pVgsSA159NHxkMyAlpZAxfDmIPuD2")
 FOLDER_NAME = CONFIG["google_drive"]["folder_name"]
 
 SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 
+# In-memory cache of credentials so we don't reload from disk every time
+_cached_creds = None
 
-def _ensure_token_file():
-    """Load token from GOOGLE_TOKEN_JSON env var if present (Render), otherwise use local file."""
+
+def _load_token_data():
+    """Load token JSON from env var (Render) or local file."""
     token_json = os.environ.get("GOOGLE_TOKEN_JSON")
     if token_json:
-        # Always use env var on Render to get latest refreshed token
-        with open(TOKEN_FILE, "w") as f:
-            f.write(token_json)
-        print("Google Drive token loaded from environment variable.")
-    elif not TOKEN_FILE.exists():
-        print("No token.json found and GOOGLE_TOKEN_JSON env var not set.")
+        try:
+            return json.loads(token_json)
+        except Exception as e:
+            print(f"Failed to parse GOOGLE_TOKEN_JSON env var: {e}")
+
+    if TOKEN_FILE.exists():
+        with open(TOKEN_FILE) as f:
+            return json.load(f)
+
+    return None
 
 
-def _ensure_credentials_file():
-    """If credentials.json doesn't exist but GOOGLE_CREDENTIALS_JSON env var is set, write it."""
-    if not CREDENTIALS_FILE.exists():
-        creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
-        if creds_json:
-            with open(CREDENTIALS_FILE, "w") as f:
-                f.write(creds_json)
-            print("Google credentials loaded from environment variable.")
+def _save_token(creds):
+    """Save refreshed token to local file and update in-memory env var."""
+    token_data = json.loads(creds.to_json())
+    compact = json.dumps(token_data, separators=(',', ':'))
+
+    # Save to local file
+    with open(TOKEN_FILE, "w") as f:
+        f.write(compact)
+
+    # Update in-memory env var so subsequent calls in same process use fresh token
+    os.environ["GOOGLE_TOKEN_JSON"] = compact
+    print("Google Drive token refreshed and saved.")
 
 
 def _get_credentials():
-    """Load and auto-refresh OAuth2 credentials from token.json."""
-    _ensure_token_file()
-    if not TOKEN_FILE.exists():
+    """Load and auto-refresh OAuth2 credentials. Uses in-memory cache."""
+    global _cached_creds
+
+    from google.oauth2.credentials import Credentials
+    from google.auth.transport.requests import Request
+
+    # Try to use cached credentials first
+    if _cached_creds and _cached_creds.valid:
+        return _cached_creds
+
+    # Load from storage
+    token_data = _load_token_data()
+    if not token_data:
+        print("No Google Drive token found.")
         return None
+
     try:
-        from google.oauth2.credentials import Credentials
-        from google.auth.transport.requests import Request
-        creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
-        if creds and creds.valid:
-            return creds
+        creds = Credentials.from_authorized_user_info(token_data, SCOPES)
+
+        # Refresh if expired
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
-            with open(TOKEN_FILE, "w") as f:
-                f.write(creds.to_json())
-            print("Google Drive token refreshed successfully.")
-            return creds
+            _save_token(creds)
+        elif not creds or not creds.valid:
+            print("Google Drive credentials invalid and cannot be refreshed.")
+            return None
+
+        _cached_creds = creds
+        return creds
+
     except Exception as e:
-        print(f"Credential load/refresh error: {e}")
-    return None
+        print(f"Google Drive credential error: {e}")
+        return None
+
+
+def refresh_token_now():
+    """Force a token refresh. Called by the keep-alive scheduler."""
+    global _cached_creds
+    _cached_creds = None  # Clear cache to force reload
+
+    from google.oauth2.credentials import Credentials
+    from google.auth.transport.requests import Request
+
+    token_data = _load_token_data()
+    if not token_data:
+        print("Token refresh failed: no token data found.")
+        return False
+
+    try:
+        creds = Credentials.from_authorized_user_info(token_data, SCOPES)
+        if creds.refresh_token:
+            creds.refresh(Request())
+            _save_token(creds)
+            _cached_creds = creds
+            print("Token proactively refreshed successfully.")
+            return True
+        else:
+            print("No refresh_token available.")
+            return False
+    except Exception as e:
+        print(f"Proactive token refresh failed: {e}")
+        return False
 
 
 def is_authorized():
     """Check if Google Drive is authorized."""
     return _get_credentials() is not None
-
-
-def get_auth_url():
-    """Generate OAuth2 authorization URL (for re-authorization if needed)."""
-    _ensure_credentials_file()
-    if not CREDENTIALS_FILE.exists():
-        raise FileNotFoundError(f"credentials.json not found")
-    from google_auth_oauthlib.flow import Flow
-    redirect_uri = os.environ.get("OAUTH_REDIRECT_URI",
-        "https://7861-i0wo5nb4yh6gb17w4aizq-744f7aaf.us1.manus.computer/oauth/callback")
-    flow = Flow.from_client_secrets_file(
-        str(CREDENTIALS_FILE),
-        scopes=SCOPES,
-        redirect_uri=redirect_uri
-    )
-    auth_url, state = flow.authorization_url(
-        access_type="offline",
-        include_granted_scopes="true",
-        prompt="consent"
-    )
-    return auth_url, state
-
-
-def handle_oauth_callback(code: str):
-    """Exchange auth code for token and save it."""
-    _ensure_credentials_file()
-    from google_auth_oauthlib.flow import Flow
-    redirect_uri = os.environ.get("OAUTH_REDIRECT_URI",
-        "https://7861-i0wo5nb4yh6gb17w4aizq-744f7aaf.us1.manus.computer/oauth/callback")
-    flow = Flow.from_client_secrets_file(
-        str(CREDENTIALS_FILE),
-        scopes=SCOPES,
-        redirect_uri=redirect_uri
-    )
-    flow.fetch_token(code=code)
-    creds = flow.credentials
-    with open(TOKEN_FILE, "w") as f:
-        f.write(creds.to_json())
-    print(f"Google Drive token saved to {TOKEN_FILE}")
 
 
 def upload_file_to_drive(file_path: str, filename: str, inspection_date: str) -> str:
@@ -143,4 +158,6 @@ def upload_file_to_drive(file_path: str, filename: str, inspection_date: str) ->
         body={"type": "anyone", "role": "reader"}
     ).execute()
 
-    return uploaded.get("webViewLink", f"https://drive.google.com/file/d/{uploaded['id']}/view")
+    link = uploaded.get("webViewLink", f"https://drive.google.com/file/d/{uploaded['id']}/view")
+    print(f"Uploaded {filename} to Google Drive: {link}")
+    return link

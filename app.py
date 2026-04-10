@@ -353,6 +353,34 @@ def drive_status():
     return jsonify({"authorized": is_authorized()})
 
 
+def _start_token_refresh_scheduler():
+    """Run a background thread that refreshes the Google Drive token every 45 minutes.
+    The OAuth access token expires after 1 hour; refreshing every 45 min keeps it alive indefinitely.
+    The refresh_token itself never expires as long as it is used at least once every 6 months.
+    """
+    import time
+    def refresh_loop():
+        while True:
+            time.sleep(45 * 60)  # Wait 45 minutes
+            try:
+                from drive_uploader import refresh_token_now
+                success = refresh_token_now()
+                if success:
+                    print("[scheduler] Google Drive token refreshed successfully.")
+                else:
+                    print("[scheduler] Token refresh returned False — may need re-authorization.")
+            except Exception as e:
+                print(f"[scheduler] Token refresh error: {e}")
+
+    t = threading.Thread(target=refresh_loop, daemon=True)
+    t.start()
+    print("[scheduler] Google Drive token refresh scheduler started (every 45 min).")
+
+
+# Start the token refresh scheduler when the app loads (works with gunicorn too)
+_start_token_refresh_scheduler()
+
+
 if __name__ == "__main__":
     print("\n" + "="*60)
     print("  SWPPP Inspection Report System")

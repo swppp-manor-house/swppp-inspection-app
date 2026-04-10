@@ -1,6 +1,6 @@
 """Email Notifier for SWPPP Inspection Reminders
 Uses Gmail SMTP (port 465 SSL) to send inspection reminders and confirmations.
-""""
+"""
 
 import json
 import os

@@ -1,7 +1,6 @@
-"""
-Email Notifier for SWPPP Inspection Reminders
-Uses iCloud SMTP to send inspection reminders to lbbartee@gmail.com
-"""
+"""Email Notifier for SWPPP Inspection Reminders
+Uses Gmail SMTP (port 465 SSL) to send inspection reminders and confirmations.
+""""
 
 import json
 import os
@@ -17,12 +16,13 @@ CONFIG_PATH = Path(__file__).parent / "config.json"
 with open(CONFIG_PATH) as f:
     CONFIG = json.load(f)
 
-ICLOUD_USER = os.environ.get("ICLOUD_USER") or CONFIG["email"]["icloud_user"]
-ICLOUD_PASS = os.environ.get("ICLOUD_PASSWORD") or CONFIG["email"]["icloud_password"]
+# Gmail SMTP works on Render free tier (port 465 SSL)
+GMAIL_USER = os.environ.get("GMAIL_USER") or CONFIG["email"].get("gmail_user", "lbartee@vt.edu")
+GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD") or CONFIG["email"].get("gmail_app_password", "")
 NOTIFY_EMAIL = CONFIG["email"]["notify_email"]
 CC_EMAILS = CONFIG["email"].get("cc_emails", [])
-SMTP_HOST = "smtp.mail.me.com"
-SMTP_PORT = 587
+SMTP_HOST = "smtp.gmail.com"
+SMTP_PORT = 465  # SSL port, works on Render free tier
 
 
 def send_inspection_reminder(inspection_date: date, form_url: str):
@@ -31,7 +31,7 @@ def send_inspection_reminder(inspection_date: date, form_url: str):
     
     msg = MIMEMultipart("alternative")
     msg["Subject"] = f"SWPPP Inspection Due — {date_str}"
-    msg["From"] = ICLOUD_USER
+    msg["From"] = GMAIL_USER
     msg["To"] = NOTIFY_EMAIL
 
     text_body = f"""
@@ -94,11 +94,9 @@ This is an automated reminder from your SWPPP Inspection Workflow.
     msg.attach(MIMEText(html_body, "html"))
 
     try:
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-            server.ehlo()
-            server.starttls()
-            server.login(ICLOUD_USER, ICLOUD_PASS)
-            server.sendmail(ICLOUD_USER, NOTIFY_EMAIL, msg.as_string())
+        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT) as server:
+            server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
+            server.sendmail(GMAIL_USER, NOTIFY_EMAIL, msg.as_string())
         print(f"Reminder email sent to {NOTIFY_EMAIL}")
         return True
     except Exception as e:
@@ -113,7 +111,7 @@ def send_report_confirmation(inspection_date: date, filename: str, drive_link: s
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = f"SWPPP Report Submitted — {date_str}"
-    msg["From"] = ICLOUD_USER
+    msg["From"] = GMAIL_USER
     msg["To"] = NOTIFY_EMAIL
     if CC_EMAILS:
         msg["Cc"] = ", ".join(CC_EMAILS)
@@ -157,12 +155,10 @@ def send_report_confirmation(inspection_date: date, filename: str, drive_link: s
     msg.attach(MIMEText(html_body, "html"))
 
     try:
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-            server.ehlo()
-            server.starttls()
-            server.login(ICLOUD_USER, ICLOUD_PASS)
+        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT) as server:
+            server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
             all_recipients = [NOTIFY_EMAIL] + CC_EMAILS
-            server.sendmail(ICLOUD_USER, all_recipients, msg.as_string())
+            server.sendmail(GMAIL_USER, all_recipients, msg.as_string())
         print(f"Confirmation email sent to {NOTIFY_EMAIL}" + (f" (CC: {', '.join(CC_EMAILS)})" if CC_EMAILS else ""))
         return True
     except Exception as e:
@@ -173,5 +169,5 @@ def send_report_confirmation(inspection_date: date, filename: str, drive_link: s
 if __name__ == "__main__":
     # Test the email
     print("Sending test reminder email...")
-    send_inspection_reminder(date.today(), "http://localhost:7861")
+    send_inspection_reminder(date.today(), "https://swppp-inspection-app.onrender.com")
     print("Done!")

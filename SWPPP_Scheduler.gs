@@ -20,7 +20,7 @@ var CONFIG = {
   ccEmail:         "yara.llbdesign@gmail.com",
   projectLocation: "9561 Springs Road, Warrenton, VA 20186",
   inspectorName:   "Lucas Bartee",
-  formUrl:         "https://7861-i0wo5nb4yh6gb17w4aizq-744f7aaf.us1.manus.computer",
+  formUrl:         "https://swppp-inspection-app.onrender.com",
   // Schedule ends after August 2027 (~18 months from March 2026)
   endDate:         new Date("2027-09-01T00:00:00")
 };

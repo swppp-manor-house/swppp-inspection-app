@@ -296,16 +296,23 @@ def post_submit_tasks(file_path: str, filename: str, inspection_date: str):
     """Upload to Google Drive and send confirmation email (runs in background thread)."""
     drive_link = None
 
-    # Upload to Google Drive
-    try:
-        from drive_uploader import upload_file_to_drive, is_authorized
-        if is_authorized():
-            drive_link = upload_file_to_drive(file_path, filename, inspection_date)
-            print(f"Uploaded {filename} to Google Drive: {drive_link}")
-        else:
-            print("Google Drive not authorized — skipping upload")
-    except Exception as e:
-        print(f"Drive upload error: {e}")
+    # Upload to Google Drive (with one retry after token refresh)
+    for attempt in range(2):
+        try:
+            from drive_uploader import upload_file_to_drive, is_authorized, refresh_token_now
+            if attempt == 1:
+                print("Drive upload retry: refreshing token first...")
+                refresh_token_now()
+            if is_authorized():
+                drive_link = upload_file_to_drive(file_path, filename, inspection_date)
+                print(f"Uploaded {filename} to Google Drive: {drive_link}")
+                break
+            else:
+                print(f"Google Drive not authorized (attempt {attempt+1}) — {'retrying' if attempt == 0 else 'skipping upload'}")
+        except Exception as e:
+            print(f"Drive upload error (attempt {attempt+1}): {e}")
+            if attempt == 1:
+                print("Drive upload failed after retry — giving up.")
 
     # Send confirmation email
     try:
@@ -360,8 +367,19 @@ def _start_token_refresh_scheduler():
     """
     import time
     def refresh_loop():
+        # Refresh immediately on startup so token is valid right away
+        try:
+            from drive_uploader import refresh_token_now
+            success = refresh_token_now()
+            if success:
+                print("[scheduler] Google Drive token refreshed on startup.")
+            else:
+                print("[scheduler] Startup token refresh returned False — may need re-authorization.")
+        except Exception as e:
+            print(f"[scheduler] Startup token refresh error: {e}")
+        # Then refresh every 45 minutes to keep it alive
         while True:
-            time.sleep(45 * 60)  # Wait 45 minutes
+            time.sleep(45 * 60)
             try:
                 from drive_uploader import refresh_token_now
                 success = refresh_token_now()
@@ -374,7 +392,7 @@ def _start_token_refresh_scheduler():
 
     t = threading.Thread(target=refresh_loop, daemon=True)
     t.start()
-    print("[scheduler] Google Drive token refresh scheduler started (every 45 min).")
+    print("[scheduler] Google Drive token refresh scheduler started (startup + every 45 min).")
 
 
 # Start the token refresh scheduler when the app loads (works with gunicorn too)

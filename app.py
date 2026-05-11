@@ -42,20 +42,36 @@ def get_weather_data(inspection_date_str: str, last_inspection_date_str: str = N
     except Exception:
         inspection_date = date.today()
 
-    # Fetch hourly weather for the inspection date
-    url = "https://api.open-meteo.com/v1/forecast"
-    params = {
-        "latitude": lat,
-        "longitude": lon,
-        "daily": "precipitation_sum,precipitation_hours,weathercode,temperature_2m_max,temperature_2m_min,windspeed_10m_max",
-        "hourly": "temperature_2m,precipitation,weathercode,windspeed_10m,cloudcover",
-        "temperature_unit": "fahrenheit",
-        "windspeed_unit": "mph",
-        "precipitation_unit": "inch",
-        "timezone": "America/New_York",
-        "start_date": inspection_date_str,
-        "end_date": inspection_date_str,
-    }
+    # Use archive API for past dates (more reliable), forecast API for today/future
+    today = date.today()
+    if inspection_date <= today:
+        url = "https://archive-api.open-meteo.com/v1/archive"
+        # Archive API doesn't support hourly for old dates in same call, use daily only
+        params = {
+            "latitude": lat,
+            "longitude": lon,
+            "daily": "precipitation_sum,precipitation_hours,weathercode,temperature_2m_max,temperature_2m_min,windspeed_10m_max",
+            "temperature_unit": "fahrenheit",
+            "windspeed_unit": "mph",
+            "precipitation_unit": "inch",
+            "timezone": "America/New_York",
+            "start_date": inspection_date_str,
+            "end_date": inspection_date_str,
+        }
+    else:
+        url = "https://api.open-meteo.com/v1/forecast"
+        params = {
+            "latitude": lat,
+            "longitude": lon,
+            "daily": "precipitation_sum,precipitation_hours,weathercode,temperature_2m_max,temperature_2m_min,windspeed_10m_max",
+            "hourly": "temperature_2m,precipitation,weathercode,windspeed_10m,cloudcover",
+            "temperature_unit": "fahrenheit",
+            "windspeed_unit": "mph",
+            "precipitation_unit": "inch",
+            "timezone": "America/New_York",
+            "start_date": inspection_date_str,
+            "end_date": inspection_date_str,
+        }
 
     result = {
         "storm_event": False,
@@ -156,7 +172,9 @@ def get_weather_data(inspection_date_str: str, last_inspection_date_str: str = N
                         break
 
     except Exception as e:
+        import traceback
         print(f"Weather API error: {e}")
+        print(traceback.format_exc())
         result["weather_options"]["Clear"] = True
 
     # Also check for storm events since last inspection

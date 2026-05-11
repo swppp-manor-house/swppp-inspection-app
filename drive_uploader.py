@@ -24,18 +24,32 @@ _cached_creds = None
 
 
 def _load_token_data():
-    """Load token JSON from env var (Render) or local file."""
-    token_json = os.environ.get("GOOGLE_TOKEN_JSON")
-    if token_json:
-        try:
-            return json.loads(token_json)
-        except Exception as e:
-            print(f"Failed to parse GOOGLE_TOKEN_JSON env var: {e}")
+    """Load token JSON from env var (Render) or local file.
+    Checks both GOOGLE_TOKEN_JSON and TOKEN_JSON env var names for compatibility.
+    """
+    # Try both env var names (GOOGLE_TOKEN_JSON is legacy; TOKEN_JSON is what startup.py sets)
+    for env_var in ("GOOGLE_TOKEN_JSON", "TOKEN_JSON"):
+        token_json = os.environ.get(env_var)
+        if token_json:
+            try:
+                data = json.loads(token_json)
+                # Sync to GOOGLE_TOKEN_JSON so in-memory cache stays consistent
+                os.environ["GOOGLE_TOKEN_JSON"] = token_json
+                return data
+            except Exception as e:
+                print(f"Failed to parse {env_var} env var: {e}")
 
     if TOKEN_FILE.exists():
-        with open(TOKEN_FILE) as f:
-            return json.load(f)
+        try:
+            with open(TOKEN_FILE) as f:
+                data = json.load(f)
+            # Cache it in env so subsequent calls are faster
+            os.environ["GOOGLE_TOKEN_JSON"] = json.dumps(data, separators=(',', ':'))
+            return data
+        except Exception as e:
+            print(f"Failed to read token file: {e}")
 
+    print("No Google Drive token found in env vars or token.json file.")
     return None
 
 
@@ -67,25 +81,38 @@ def _get_credentials():
     # Load from storage
     token_data = _load_token_data()
     if not token_data:
-        print("No Google Drive token found.")
+        print("[Drive] No token data found — Drive not authorized.")
         return None
 
     try:
         creds = Credentials.from_authorized_user_info(token_data, SCOPES)
+        print(f"[Drive] Token loaded. valid={creds.valid}, expired={creds.expired}, has_refresh={bool(creds.refresh_token)}")
 
-        # Refresh if expired
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-            _save_token(creds)
-        elif not creds or not creds.valid:
-            print("Google Drive credentials invalid and cannot be refreshed.")
+        # Always attempt a refresh if we have a refresh_token.
+        # The access_token stored in the env var may be stale even if creds.expired
+        # reports False (e.g. missing or wrong expiry timestamp in stored JSON).
+        if creds.refresh_token:
+            try:
+                creds.refresh(Request())
+                _save_token(creds)
+                print("[Drive] Token refreshed successfully.")
+            except Exception as refresh_err:
+                print(f"[Drive] Token refresh failed: {refresh_err}")
+                # If refresh fails but creds are still valid, continue anyway
+                if not creds.valid:
+                    print("[Drive] Credentials invalid after failed refresh — cannot upload.")
+                    return None
+        elif not creds.valid:
+            print("[Drive] Credentials invalid and no refresh_token available.")
             return None
 
         _cached_creds = creds
         return creds
 
     except Exception as e:
-        print(f"Google Drive credential error: {e}")
+        print(f"[Drive] Credential error: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 
@@ -125,6 +152,7 @@ def is_authorized():
 
 def upload_file_to_drive(file_path: str, filename: str, inspection_date: str) -> str:
     """Upload a PDF file to the user's Google Drive folder and return the shareable link."""
+    print(f"[Drive] Starting upload of {filename} to folder {FOLDER_ID}")
     creds = _get_credentials()
     if not creds:
         raise RuntimeError("Google Drive not authorized. Token missing or expired.")

@@ -16,9 +16,51 @@ from reportlab.platypus import (
 )
 from reportlab.platypus.flowables import Flowable
 from reportlab.pdfgen import canvas as pdfcanvas
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _SIG_PATH = os.path.join(_SCRIPT_DIR, 'static', 'signature.png')
+
+# ── Register NotoSans fonts ───────────────────────────────────────────────────
+def _register_fonts():
+    """Register NotoSans TTF fonts for embedding in PDF."""
+    fonts_dir = os.path.join(_SCRIPT_DIR, 'fonts')
+    font_map = [
+        ('Noto-Sans',            'NotoSans-Regular.ttf'),
+        ('Noto-Sans-Bold',       'NotoSans-Bold.ttf'),
+        ('Noto-Sans-Italic',     'NotoSans-Italic.ttf'),
+        ('Noto-Sans-Bold-Italic','NotoSans-BoldItalic.ttf'),
+    ]
+    registered = []
+    for name, filename in font_map:
+        path = os.path.join(fonts_dir, filename)
+        if os.path.exists(path):
+            try:
+                pdfmetrics.registerFont(TTFont(name, path))
+                registered.append(name)
+            except Exception:
+                pass
+    # Register font family so bold/italic tags work in Paragraphs
+    if len(registered) == 4:
+        from reportlab.pdfbase.pdfmetrics import registerFontFamily
+        registerFontFamily(
+            'Noto-Sans',
+            normal='Noto-Sans',
+            bold='Noto-Sans-Bold',
+            italic='Noto-Sans-Italic',
+            boldItalic='Noto-Sans-Bold-Italic'
+        )
+        return True
+    return False
+
+_NOTO_AVAILABLE = _register_fonts()
+
+# Use NotoSans if available, fall back to Helvetica
+_F_NORMAL      = 'Noto-Sans'            if _NOTO_AVAILABLE else 'Helvetica'
+_F_BOLD        = 'Noto-Sans-Bold'       if _NOTO_AVAILABLE else 'Helvetica-Bold'
+_F_ITALIC      = 'Noto-Sans-Italic'     if _NOTO_AVAILABLE else 'Helvetica-Oblique'
+_F_BOLD_ITALIC = 'Noto-Sans-Bold-Italic'if _NOTO_AVAILABLE else 'Helvetica-BoldOblique'
 
 PAGE_W, PAGE_H = letter
 L_MARGIN = 0.75 * inch
@@ -53,7 +95,9 @@ class CheckBox(Flowable):
 
 class InlineCheckLabel(Flowable):
     """A single-row inline element: [checkbox] [space] [label text]."""
-    def __init__(self, label, checked=False, cb_size=9, font='Helvetica', font_size=10, leading=13):
+    def __init__(self, label, checked=False, cb_size=9, font=None, font_size=10, leading=13):
+        if font is None:
+            font = _F_NORMAL
         super().__init__()
         self.label = label
         self.checked = checked
@@ -98,13 +142,13 @@ class UnderlinedField(Flowable):
         y = 2  # baseline
 
         # Bold label
-        c.setFont('Helvetica-Bold', fs)
+        c.setFont(_F_BOLD, fs)
         c.setFillColor(colors.black)
         c.drawString(0, y, self.label)
-        label_w = c.stringWidth(self.label, 'Helvetica-Bold', fs)
+        label_w = c.stringWidth(self.label, _F_BOLD, fs)
 
         # Value text
-        c.setFont('Helvetica', fs)
+        c.setFont(_F_NORMAL, fs)
         val_x = label_w + 4
         c.drawString(val_x, y, self.value)
 
@@ -118,16 +162,16 @@ class UnderlinedField(Flowable):
 # ── Styles ────────────────────────────────────────────────────────────────────
 
 def _styles():
-    normal = ParagraphStyle('normal', fontSize=10, leading=14, fontName='Helvetica')
-    bold   = ParagraphStyle('bold',   fontSize=10, leading=14, fontName='Helvetica-Bold')
-    small  = ParagraphStyle('small',  fontSize=8.5, leading=12, fontName='Helvetica')
-    italic = ParagraphStyle('italic', fontSize=10, leading=14, fontName='Helvetica-Oblique')
-    title1 = ParagraphStyle('title1', fontSize=16, leading=20, fontName='Helvetica-Bold', alignment=TA_CENTER)
-    title2 = ParagraphStyle('title2', fontSize=14, leading=18, fontName='Helvetica-Bold', alignment=TA_CENTER)
-    section_hdr = ParagraphStyle('section_hdr', fontSize=11, leading=15, fontName='Helvetica-Bold')
-    cert_text = ParagraphStyle('cert_text', fontSize=9.5, leading=14, fontName='Helvetica-Oblique',
+    normal = ParagraphStyle('normal', fontSize=10, leading=14, fontName=_F_NORMAL)
+    bold   = ParagraphStyle('bold',   fontSize=10, leading=14, fontName=_F_BOLD)
+    small  = ParagraphStyle('small',  fontSize=8.5, leading=12, fontName=_F_NORMAL)
+    italic = ParagraphStyle('italic', fontSize=10, leading=14, fontName=_F_ITALIC)
+    title1 = ParagraphStyle('title1', fontSize=16, leading=20, fontName=_F_BOLD, alignment=TA_CENTER)
+    title2 = ParagraphStyle('title2', fontSize=14, leading=18, fontName=_F_BOLD, alignment=TA_CENTER)
+    section_hdr = ParagraphStyle('section_hdr', fontSize=11, leading=15, fontName=_F_BOLD)
+    cert_text = ParagraphStyle('cert_text', fontSize=9.5, leading=14, fontName=_F_ITALIC,
                                alignment=TA_JUSTIFY, leftIndent=6, rightIndent=6)
-    footer_style = ParagraphStyle('footer', fontSize=8, leading=11, fontName='Helvetica-Oblique',
+    footer_style = ParagraphStyle('footer', fontSize=8, leading=11, fontName=_F_ITALIC,
                                   alignment=TA_CENTER, textColor=colors.grey)
     return dict(normal=normal, bold=bold, small=small, italic=italic,
                 title1=title1, title2=title2, section_hdr=section_hdr,
@@ -153,9 +197,9 @@ class YesNoCell(Flowable):
         cb = self.cb_size
 
         if self.na:
-            c.setFont('Helvetica', fs)
+            c.setFont(_F_NORMAL, fs)
             c.setFillColor(colors.grey)
-            tw = c.stringWidth('N/A', 'Helvetica', fs)
+            tw = c.stringWidth('N/A', _F_NORMAL, fs)
             c.drawString((self.width - tw) / 2, 2, 'N/A')
             return
 
@@ -173,8 +217,8 @@ class YesNoCell(Flowable):
         c.setLineWidth(0.8)
 
         # Center the whole group
-        yes_w = cb + 3 + c.stringWidth('Yes', 'Helvetica', fs)
-        no_w  = cb + 3 + c.stringWidth('No',  'Helvetica', fs)
+        yes_w = cb + 3 + c.stringWidth('Yes', _F_NORMAL, fs)
+        no_w  = cb + 3 + c.stringWidth('No',  _F_NORMAL, fs)
         gap   = 8
         total = yes_w + gap + no_w
         x = (self.width - total) / 2
@@ -184,7 +228,7 @@ class YesNoCell(Flowable):
         c.setFillColor(colors.black if yes_checked else colors.white)
         c.rect(x, y_cb, cb, cb, stroke=1, fill=1)
         c.setFillColor(colors.black)
-        c.setFont('Helvetica', fs)
+        c.setFont(_F_NORMAL, fs)
         c.drawString(x + cb + 3, y_cb + 1, 'Yes')
         x += yes_w + gap
 
@@ -374,7 +418,7 @@ def generate_swppp_pdf(form_data: dict, output_path: str):
 
     # Certification Statement box
     cert_header_style = ParagraphStyle('ch', fontSize=11, leading=15,
-                                       fontName='Helvetica-BoldOblique', alignment=TA_CENTER)
+                                       fontName=_F_BOLD_ITALIC, alignment=TA_CENTER)
     cert_inner = Paragraph(
         '\u201cI certify under penalty of law that this document and all attachments were prepared under my '
         'direction or supervision in accordance with a system designed to assure that qualified personnel '
@@ -415,8 +459,8 @@ def generate_swppp_pdf(form_data: dict, output_path: str):
     else:
         sig_elements.append(Spacer(1, 0.65*inch))
 
-    name_style = ParagraphStyle('name_sig', fontSize=10, leading=14, fontName='Helvetica-Bold')
-    date_style = ParagraphStyle('date_sig', fontSize=10, leading=14, fontName='Helvetica-Bold')
+    name_style = ParagraphStyle('name_sig', fontSize=10, leading=14, fontName=_F_BOLD)
+    date_style = ParagraphStyle('date_sig', fontSize=10, leading=14, fontName=_F_BOLD)
 
     sig_data = [[sig_elements[0], Paragraph(inspector_name, name_style), Paragraph(inspection_date, date_style)]]
     sig_t = Table(sig_data, colWidths=[2.5*inch, 2.8*inch, 1.7*inch])
@@ -434,7 +478,7 @@ def generate_swppp_pdf(form_data: dict, output_path: str):
     story.append(Spacer(1, 2))
 
     label_style = ParagraphStyle('sig_lbl', fontSize=8.5, leading=11,
-                                 fontName='Helvetica-Oblique', textColor=colors.black)
+                                 fontName=_F_ITALIC, textColor=colors.black)
     sig_labels = Table([[
         Paragraph('<i>Signature of Inspector</i>', label_style),
         Paragraph('<i>Printed Name and Title</i>', label_style),
@@ -454,7 +498,7 @@ def generate_swppp_pdf(form_data: dict, output_path: str):
     story.append(HRFlowable(width=W, thickness=2, color=colors.black, spaceAfter=6))
     story.append(Paragraph(
         'Below are some general site issues that should be assessed during inspections.',
-        ParagraphStyle('note', fontSize=9.5, leading=13, fontName='Helvetica')))
+        ParagraphStyle('note', fontSize=9.5, leading=13, fontName=_F_NORMAL)))
     story.append(Spacer(1, 8))
 
     site_items_def = [
@@ -476,9 +520,9 @@ def generate_swppp_pdf(form_data: dict, output_path: str):
         (16, "(Other)", True),
     ]
 
-    item_style = ParagraphStyle('item', fontSize=9.5, leading=13, fontName='Helvetica')
-    hdr_style  = ParagraphStyle('hdr',  fontSize=9.5, leading=13, fontName='Helvetica-Bold', alignment=TA_CENTER)
-    hdr_l_style = ParagraphStyle('hdr_l', fontSize=9.5, leading=13, fontName='Helvetica-Bold')
+    item_style = ParagraphStyle('item', fontSize=9.5, leading=13, fontName=_F_NORMAL)
+    hdr_style  = ParagraphStyle('hdr',  fontSize=9.5, leading=13, fontName=_F_BOLD, alignment=TA_CENTER)
+    hdr_l_style = ParagraphStyle('hdr_l', fontSize=9.5, leading=13, fontName=_F_BOLD)
 
     CB_W = 1.05 * inch
     NOTE_W = 1.3 * inch
@@ -499,7 +543,7 @@ def generate_swppp_pdf(form_data: dict, output_path: str):
 
         impl_cell  = YesNoCell(impl,  na=False,     cell_width=CB_W)
         maint_cell = YesNoCell(maint, na=not has_maint, cell_width=CB_W)
-        notes_cell = Paragraph(notes, ParagraphStyle('notes_cell', fontSize=9, leading=12, fontName='Helvetica'))
+        notes_cell = Paragraph(notes, ParagraphStyle('notes_cell', fontSize=9, leading=12, fontName=_F_NORMAL))
 
         table_data.append([
             Paragraph(f'<b>{num}.</b> {desc}', item_style),
@@ -515,7 +559,7 @@ def generate_swppp_pdf(form_data: dict, output_path: str):
     ts = TableStyle([
         # Header row
         ('BACKGROUND', (0,0), (-1,0), colors.Color(0.85, 0.85, 0.85)),
-        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTNAME', (0,0), (-1,0), _F_BOLD),
         # All cells
         ('BOX', (0,0), (-1,-1), 0.75, colors.black),
         ('INNERGRID', (0,0), (-1,-1), 0.5, colors.black),
@@ -541,7 +585,7 @@ def generate_swppp_pdf(form_data: dict, output_path: str):
 
     comments_height = max(70, 14 * (comments.count('\n') + 2)) if comments else 70
     comments_t = Table(
-        [[Paragraph(comments or '', ParagraphStyle('comments', fontSize=9.5, leading=13, fontName='Helvetica'))]],
+        [[Paragraph(comments or '', ParagraphStyle('comments', fontSize=9.5, leading=13, fontName=_F_NORMAL))]],
         colWidths=[W], rowHeights=[comments_height]
     )
     comments_t.setStyle(TableStyle([
@@ -572,7 +616,7 @@ def generate_swppp_pdf(form_data: dict, output_path: str):
 def _make_cb_para(checked, label, font_size=10):
     """Return a Table containing a drawn checkbox + label text."""
     cb = CheckBox(checked=checked, size=9)
-    lbl = Paragraph(label, ParagraphStyle('cblbl', fontSize=font_size, leading=13, fontName='Helvetica'))
+    lbl = Paragraph(label, ParagraphStyle('cblbl', fontSize=font_size, leading=13, fontName=_F_NORMAL))
     t = Table([[cb, lbl]], colWidths=[12, None])
     t.setStyle(TableStyle([
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),

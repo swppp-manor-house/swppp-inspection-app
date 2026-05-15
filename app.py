@@ -378,6 +378,53 @@ def drive_status():
     return jsonify({"authorized": is_authorized()})
 
 
+@app.route("/drive/debug")
+def drive_debug():
+    """Detailed Drive token diagnostics — shows token state and attempts a refresh."""
+    import os, json
+    info = {}
+
+    # Check env vars
+    info["GOOGLE_TOKEN_JSON_set"] = bool(os.environ.get("GOOGLE_TOKEN_JSON"))
+    info["TOKEN_JSON_set"] = bool(os.environ.get("TOKEN_JSON"))
+
+    # Check token file
+    from pathlib import Path
+    token_file = Path(__file__).parent / "token.json"
+    info["token_file_exists"] = token_file.exists()
+
+    # Try to load and inspect token
+    try:
+        from drive_uploader import _load_token_data
+        token_data = _load_token_data()
+        if token_data:
+            info["token_keys"] = list(token_data.keys())
+            info["has_refresh_token"] = bool(token_data.get("refresh_token"))
+            info["has_access_token"] = bool(token_data.get("token") or token_data.get("access_token"))
+            info["token_expiry"] = token_data.get("expiry", token_data.get("token_expiry", "not set"))
+        else:
+            info["token_data"] = None
+    except Exception as e:
+        info["token_load_error"] = str(e)
+
+    # Try to get credentials
+    try:
+        from drive_uploader import _get_credentials
+        creds = _get_credentials()
+        if creds:
+            info["creds_valid"] = creds.valid
+            info["creds_expired"] = creds.expired
+            info["creds_has_refresh"] = bool(creds.refresh_token)
+            info["authorized"] = True
+        else:
+            info["authorized"] = False
+            info["creds"] = None
+    except Exception as e:
+        info["creds_error"] = str(e)
+
+    return jsonify(info)
+
+
 def _start_token_refresh_scheduler():
     """Run a background thread that refreshes the Google Drive token every 45 minutes.
     The OAuth access token expires after 1 hour; refreshing every 45 min keeps it alive indefinitely.

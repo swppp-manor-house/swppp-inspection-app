@@ -17,7 +17,7 @@ TOKEN_FILE = Path(__file__).parent / "token.json"
 FOLDER_ID = CONFIG["google_drive"].get("folder_id", "1pu9pVgsSA159NHxkMyAlpZAxfDmIPuD2")
 FOLDER_NAME = CONFIG["google_drive"]["folder_name"]
 
-SCOPES = ["https://www.googleapis.com/auth/drive.file"]
+SCOPES = ["https://www.googleapis.com/auth/drive"]
 
 # In-memory cache of credentials so we don't reload from disk every time
 _cached_creds = None
@@ -148,6 +148,56 @@ def refresh_token_now():
 def is_authorized():
     """Check if Google Drive is authorized."""
     return _get_credentials() is not None
+
+
+def get_auth_url():
+    """Generate the Google OAuth2 authorization URL for the Drive scope."""
+    from google_auth_oauthlib.flow import Flow
+    import os
+
+    CREDENTIALS_FILE = Path(__file__).parent / "credentials.json"
+    REDIRECT_URI = os.environ.get(
+        "OAUTH_REDIRECT_URI",
+        "https://swppp-inspection-app.onrender.com/oauth/callback"
+    )
+
+    flow = Flow.from_client_secrets_file(
+        str(CREDENTIALS_FILE),
+        scopes=SCOPES,
+        redirect_uri=REDIRECT_URI
+    )
+    auth_url, state = flow.authorization_url(
+        access_type="offline",
+        include_granted_scopes="false",
+        prompt="consent"  # Force consent to get a fresh refresh_token
+    )
+    return auth_url, state
+
+
+def handle_oauth_callback(code: str):
+    """Exchange the OAuth2 authorization code for tokens and save them."""
+    from google_auth_oauthlib.flow import Flow
+    import os
+
+    CREDENTIALS_FILE = Path(__file__).parent / "credentials.json"
+    REDIRECT_URI = os.environ.get(
+        "OAUTH_REDIRECT_URI",
+        "https://swppp-inspection-app.onrender.com/oauth/callback"
+    )
+
+    flow = Flow.from_client_secrets_file(
+        str(CREDENTIALS_FILE),
+        scopes=SCOPES,
+        redirect_uri=REDIRECT_URI
+    )
+    flow.fetch_token(code=code)
+    creds = flow.credentials
+    _save_token(creds)
+
+    global _cached_creds
+    _cached_creds = creds
+    print("[Drive] OAuth callback completed — new token saved.")
+    return creds
 
 
 def upload_file_to_drive(file_path: str, filename: str, inspection_date: str) -> str:

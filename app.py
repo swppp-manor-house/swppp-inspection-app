@@ -378,6 +378,21 @@ def drive_status():
     return jsonify({"authorized": is_authorized()})
 
 
+@app.route("/drive/export-token")
+def drive_export_token():
+    """Temporarily export the current token JSON for local use. Remove after use."""
+    import os
+    tok = os.environ.get("GOOGLE_TOKEN_JSON")
+    if not tok:
+        from pathlib import Path
+        tf = Path(__file__).parent / "token.json"
+        if tf.exists():
+            tok = tf.read_text()
+    if tok:
+        return tok, 200, {"Content-Type": "application/json"}
+    return jsonify({"error": "No token found"}), 404
+
+
 @app.route("/drive/debug")
 def drive_debug():
     """Detailed Drive token diagnostics — shows token state and attempts a refresh."""

@@ -27,7 +27,19 @@ def write_env_json(env_var: str, file_path: Path):
 
 # Write all credential files from environment variables
 write_env_json("CONFIG_JSON", BASE_DIR / "config.json")
-write_env_json("TOKEN_JSON", BASE_DIR / "token.json")
+
+# Token can be stored under either env var name
+token_path = BASE_DIR / "token.json"
+if os.environ.get("GOOGLE_TOKEN_JSON"):
+    write_env_json("GOOGLE_TOKEN_JSON", token_path)
+elif os.environ.get("TOKEN_JSON"):
+    write_env_json("TOKEN_JSON", token_path)
+else:
+    if token_path.exists():
+        print(f"[startup] token.json already exists on disk, skipping")
+    else:
+        print(f"[startup] WARNING: Neither GOOGLE_TOKEN_JSON nor TOKEN_JSON set and token.json not found")
+
 write_env_json("CREDENTIALS_JSON", BASE_DIR / "credentials.json")
 
 # Ensure reports directory exists

@@ -285,20 +285,52 @@ def generate_pdf():
 
     try:
         generate_swppp_pdf(form_data, str(output_path))
-
-        # Upload to Google Drive and send confirmation email in background
-        threading.Thread(
-            target=post_submit_tasks,
-            args=(str(output_path), filename, inspection_date)
-        ).start()
-
-        return jsonify({
-            "success": True,
-            "filename": filename,
-            "download_url": f"/download/{filename}"
-        })
     except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"success": False, "error": f"PDF generation failed: {e}"}), 500
+
+    # Upload to Google Drive SYNCHRONOUSLY so we know immediately if it fails
+    drive_link = None
+    drive_error = None
+    for attempt in range(2):
+        try:
+            from drive_uploader import upload_file_to_drive, is_authorized, refresh_token_now
+            if attempt == 1:
+                print("[Drive] Retry: refreshing token first...")
+                refresh_token_now()
+            if is_authorized():
+                drive_link = upload_file_to_drive(str(output_path), filename, inspection_date)
+                print(f"[Drive] Upload SUCCESS: {filename} -> {drive_link}")
+                break
+            else:
+                drive_error = f"Google Drive not authorized (attempt {attempt+1})"
+                print(f"[Drive] {drive_error}")
+        except Exception as e:
+            drive_error = f"Drive upload error (attempt {attempt+1}): {e}"
+            print(f"[Drive] {drive_error}")
+            import traceback
+            traceback.print_exc()
+
+    if not drive_link:
+        print(f"[Drive] UPLOAD FAILED after 2 attempts: {drive_error}")
+
+    # Send confirmation email (still in background — not critical path)
+    def send_email_bg():
+        try:
+            from email_notifier import send_report_confirmation
+            from datetime import datetime as dt2
+            date_obj = dt2.strptime(inspection_date, "%Y-%m-%d").date()
+            send_report_confirmation(date_obj, filename, drive_link)
+        except Exception as e:
+            print(f"[Email] Confirmation email error: {e}")
+    threading.Thread(target=send_email_bg, daemon=True).start()
+
+    return jsonify({
+        "success": True,
+        "filename": filename,
+        "download_url": f"/download/{filename}",
+        "drive_link": drive_link,
+        "drive_error": drive_error if not drive_link else None
+    })
 
 
 @app.route("/download/<filename>")
@@ -308,38 +340,6 @@ def download(filename):
     if file_path.exists():
         return send_file(str(file_path), as_attachment=True, download_name=filename)
     return "File not found", 404
-
-
-def post_submit_tasks(file_path: str, filename: str, inspection_date: str):
-    """Upload to Google Drive and send confirmation email (runs in background thread)."""
-    drive_link = None
-
-    # Upload to Google Drive (with one retry after token refresh)
-    for attempt in range(2):
-        try:
-            from drive_uploader import upload_file_to_drive, is_authorized, refresh_token_now
-            if attempt == 1:
-                print("Drive upload retry: refreshing token first...")
-                refresh_token_now()
-            if is_authorized():
-                drive_link = upload_file_to_drive(file_path, filename, inspection_date)
-                print(f"Uploaded {filename} to Google Drive: {drive_link}")
-                break
-            else:
-                print(f"Google Drive not authorized (attempt {attempt+1}) — {'retrying' if attempt == 0 else 'skipping upload'}")
-        except Exception as e:
-            print(f"Drive upload error (attempt {attempt+1}): {e}")
-            if attempt == 1:
-                print("Drive upload failed after retry — giving up.")
-
-    # Send confirmation email
-    try:
-        from email_notifier import send_report_confirmation
-        from datetime import datetime
-        date_obj = datetime.strptime(inspection_date, "%Y-%m-%d").date()
-        send_report_confirmation(date_obj, filename, drive_link)
-    except Exception as e:
-        print(f"Confirmation email error: {e}")
 
 
 @app.route("/oauth/callback")
